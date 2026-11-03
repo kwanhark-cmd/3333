@@ -17,10 +17,10 @@
       App.setTitle(`${query.year}년 ${query.month}월`);
       view.append(h("div", { class: "row" }, App.link("← 이 해의 다른 달", "#/photos?" + App.qs({ year: query.year, kind }), "btn-ghost btn-small"),
         App.link("TV 상영관으로 보기", "#/theater?" + App.qs({ year: query.year, month: query.month, kind }), "btn-accent", "television")));
-      const box = h("div", { class: "stack" });
-      view.append(box);
-      const load = async (page) => App.renderResults(await App.api("/api/timeline/items?" + App.qs({ year: query.year, month: query.month, kind, page })), box, load);
-      await load(1);
+      const first = await App.api("/api/timeline/items?" + App.qs({ year: query.year, month: query.month, kind, page: 1, page_size: 120 }));
+      view.append(h("p", { class: "muted", text: `${first.total.toLocaleString()}개` }),
+        App.virtual({ total: first.total, pageSize: 120, first: first.items, mode: "grid", render: App.renderFileItem,
+          fetchPage: async (page) => (await App.api("/api/timeline/items?" + App.qs({ year: query.year, month: query.month, kind, page, page_size: 120 }))).items }));
       return;
     }
     if (query.year) {
@@ -59,10 +59,10 @@
     view.append(tabs("#/places"));
     if (query.place) {
       App.setTitle("📍 " + query.place);
-      const box = h("div", {});
-      view.append(App.link("← 모든 장소", "#/places", "btn-ghost btn-small"), box);
-      const load = async (page) => App.renderResults(await App.api("/api/timeline/items?" + App.qs({ place: query.place, page })), box, load);
-      await load(1);
+      const first = await App.api("/api/timeline/items?" + App.qs({ place: query.place, page: 1, page_size: 120 }));
+      view.append(App.link("← 모든 장소", "#/places", "btn-ghost btn-small"),
+        App.virtual({ total: first.total, pageSize: 120, first: first.items, mode: "grid", render: App.renderFileItem,
+          fetchPage: async (page) => (await App.api("/api/timeline/items?" + App.qs({ place: query.place, page, page_size: 120 }))).items }));
       return;
     }
     const places = await App.api("/api/places");

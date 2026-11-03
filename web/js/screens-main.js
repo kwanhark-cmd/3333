@@ -5,41 +5,79 @@
   const h = App.h;
 
   // ================= 홈 =================
+  // 크기로 중요도: 검색창 > 오늘의 추억(사진 크게) > 사람 얼굴 줄 > 종류별 타일(2열) > 색인 진행 띠(작게)
   App.route("/", async (view) => {
     App.setTitle(App.appName());
-    const today = await App.api("/api/today");
-    const card = h("section", { class: "today", "aria-label": "오늘 할 일" });
-    if (today.type === "memory" && today.item) {
-      card.append(h("img", { class: "thumb", src: App.thumb(today.item.id), alt: "오늘의 추억 사진" }));
-    } else {
-      card.append(App.mascot(today.type === "indexing" ? "searching" : "hello", "mascot mascot-bounce"));
-    }
-    const right = h("div", {}, h("div", { class: "small", text: "오늘 할 일" }), h("div", { class: "t-title", text: today.title }));
-    if (today.type === "indexing") right.append(h("div", { class: "bar moving", role: "progressbar", "aria-valuenow": today.percent, "aria-label": "색인 진행률" }, h("span", { style: { width: (today.percent || 2) + "%" } })));
-    const labels = { start: "시작하기", indexing: "진행 상황 보기", resume: "이어서 하기", memory: "추억 보기", search: "찾으러 가기" };
-    right.append(h("div", { class: "row" }, App.link(labels[today.type] || "열기", today.action, "btn-accent"),
-      today.speech ? App.speakButton(today.speech) : null));
-    card.append(right);
-    view.append(card, App.statusChips());
+    const d = await App.api("/api/home");
+    const today = d.today, o = d.overview;
 
-    const q = h("input", { type: "search", placeholder: "무엇을 찾을까요? 예) 2005년 아이들 영상", "aria-label": "찾을 말" });
+    // 1) 검색창(주인공) + 치는 즉시 결과
+    const q = h("input", { type: "search", placeholder: "무엇을 찾을까요? 예) 2005년 아이들 영상", "aria-label": "찾을 말", autocomplete: "off" });
+    const quick = h("div", { class: "quick", "aria-live": "polite" });
     const go = (text, voice) => App.go("#/search?" + App.qs({ q: text ?? q.value, voice: voice ? 1 : "" }));
     q.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
-    view.append(h("div", { class: "searchbar" }, q, App.btn("찾기", () => go(), "btn-primary", "magnifying-glass-tilted-left"), App.micButton((t) => go(t, true))));
+    let timer = null, seq = 0;
+    q.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const my = ++seq, text = q.value.trim();
+        if (!text) { quick.replaceChildren(); return; }
+        try {
+          const r = await App.api("/api/search?" + App.qs({ q: text, page_size: 8 }));
+          if (my !== seq) return;
+          const items = [...((r.files && r.files.items) || []), ...((r.content && r.content.items) || [])].slice(0, 8);
+          quick.replaceChildren(
+            items.length ? h("div", { class: "list" }, items.map(App.renderFileRow)) : h("p", { class: "muted", text: "찾는 자료가 아직 없어요." }),
+            App.link(`'${text}' 모두 보기`, "#/search?" + App.qs({ q: text }), "btn-primary btn-small"));
+        } catch (e) { /* 검색 화면에서 다시 시도 가능 */ }
+      }, 200);
+    });
+    App.onCleanup(() => clearTimeout(timer));
+    view.append(h("div", { class: "hero-search", role: "search" }, q, App.btn("찾기", () => go(), "btn-primary", "magnifying-glass-tilted-left"), App.micButton((t) => go(t, true))), quick);
 
+    // 2) 오늘의 추억(사진 크게) 또는 오늘 할 일
+    if (today.type === "memory" && today.item) {
+      view.append(h("a", { class: "memory", href: today.action, "aria-label": today.title },
+        h("img", { src: App.thumb(today.item.id), alt: "오늘의 추억 사진" }),
+        h("div", { class: "m-over" }, h("div", { class: "small", text: "오늘의 추억" }), h("div", { class: "t-display", text: today.title }))),
+        h("div", { class: "row" }, App.link("추억 모두 보기", today.action, "btn-accent", "sparkles"), App.speakButton(today.speech, "추억 읽어주기")));
+    } else {
+      const labels = { start: "시작하기", indexing: "진행 상황 보기", resume: "이어서 하기", search: "찾으러 가기" };
+      view.append(h("section", { class: "today", "aria-label": "오늘 할 일" }, App.mascot(today.type === "indexing" ? "searching" : "hello", "mascot mascot-bounce"),
+        h("div", {}, h("div", { class: "small", text: "오늘 할 일" }), h("div", { class: "t-display", text: today.title }),
+          h("div", { class: "row" }, App.link(labels[today.type] || "열기", today.action, "btn-accent")))));
+    }
+
+    // 3) 사람 — 동그란 얼굴 줄
+    if (d.people.length) {
+      view.append(h("section", {}, h("div", { class: "sec-head" }, h("h2", { text: "사람" }), App.link("모두 보기", "#/people", "btn-ghost btn-small")),
+        h("div", { class: "faces k-person" }, d.people.map((p) => h("a", { class: "face", href: `#/person/${p.id}` },
+          h("img", { src: App.url(`/api/faces/${p.cover_face_id}/thumb`), alt: p.name || "이름 없는 사람", loading: "lazy", onerror: (e) => e.target.replaceWith(h("span", { class: "ph" })) }),
+          h("span", { text: p.name || "이름 붙이기" }))))));
+    }
+
+    // 4) 종류별 타일(2열, 종류별 색)
+    const n = (x) => (x || 0).toLocaleString();
     const tiles = [
-      ["#/search", "magnifying-glass-tilted-left", "찾기", "이름·내용·말로 한 번에"],
-      ["#/photos", "camera", "사진·영상", "날짜별·추억·장소·상영관"],
-      ["#/docs", "page-facing-up", "문서", "한글·엑셀·워드·PDF"],
-      ["#/people", "family", "사람", "얼굴로 가족별 모아보기"],
-      ["#/records", "notebook", "기록", "일기·일정·연락처·인맥"],
-      ["#/dupes", "broom", "정리", "같은 파일 찾아 정리"],
+      ["#/photos?kind=image", "k-photo", "camera", "사진", `${n(o.images)}장`, "날짜별·추억·장소"],
+      ["#/photos?kind=video", "k-video", "film-frames", "영상", `${n(o.videos)}개`, "장면 찾기·상영관"],
+      ["#/docs", "k-doc", "page-facing-up", "문서", `${n(o.docs)}개`, "한글·엑셀·워드·PDF"],
+      ["#/records", "k-diary", "notebook", "일기·기록", `${n(d.records)}개`, "일기·일정·메모·인맥"],
+      ["#/people", "k-person", "family", "사람", `${n(d.people.length)}명 · 연락처 ${n(d.contacts)}`, "얼굴·연락처·목소리"],
+      ["#/dupes", "k-tool", "broom", "정리", d.dupes ? `같은 파일 ${n(d.dupes)}묶음` : "중복 찾기", "같은 파일 정리"],
     ];
-    view.append(h("h2", { class: "sr-only", text: "메뉴" }),
-      h("nav", { class: "tiles stagger", "aria-label": "메뉴" }, tiles.map(([href, ico, name, desc]) =>
-        h("a", { class: "tile", href }, App.icon(ico), h("span", {}, h("span", { class: "t-name", text: name }), h("span", { class: "t-desc", text: desc }))))));
-    view.append(h("div", { class: "row", style: { marginTop: "var(--gap-l)" } },
-      App.link("하드 상태", "#/index", "btn-ghost", "computer-disk"), App.link("설정", "#/settings", "btn-ghost", "gear")));
+    view.append(h("nav", { class: "ktiles stagger", "aria-label": "자료 종류" }, tiles.map(([href, k, ico, name, num, desc]) =>
+      h("a", { class: `ktile ${k}`, href }, h("span", { class: "kicon" }, App.icon(ico)),
+        h("span", {}, h("span", { class: "t-name", text: name }), h("span", { class: "t-num", text: num }), h("span", { class: "t-desc", text: desc }))))));
+
+    // 5) 색인 진행 — 작은 띠(큰 숫자 + 진행 막대) + 상태 4가지
+    const st = App.status && App.status.index;
+    const pct = st ? (st.running ? st.percent : st.done ? 100 : st.percent || 0) : 0;
+    view.append(h("section", { class: "ixstrip", "aria-label": "색인 진행" },
+      h("span", { class: "big", text: st && st.running ? `${pct}%` : `${n(o.total)}개` }),
+      h("div", { class: "bar " + (st && st.running ? "moving" : "ok"), role: "progressbar", "aria-valuenow": pct, "aria-label": "색인 진행률" }, h("span", { style: { width: Math.max(3, pct) + "%" } })),
+      App.statusChips()),
+      h("div", { class: "row" }, App.link("하드 상태", "#/index", "btn-ghost btn-small", "computer-disk"), App.link("설정", "#/settings", "btn-ghost btn-small", "gear")));
   }, { title: "홈" });
 
   // ================= 폴더 고르기 =================
@@ -143,17 +181,30 @@
   }, { title: "처음 설정" });
 
   // ================= 찾기 =================
+  App.kindClass = (it) => ({ image: "k-photo", video: "k-video", audio: "k-video", doc: "k-doc" }[it.kind] || "k-tool");
+  /** 목록 한 줄(종류별 색 아이콘 + 이름 + 찾은 문장 미리보기) */
+  App.renderFileRow = function (it) {
+    const media = it.kind === "image" || it.kind === "video";
+    return h("a", { class: `item kind ${App.kindClass(it)}`, href: `#/file/${it.id}` },
+      h("span", { class: "kicon" }, media ? h("img", { src: App.thumb(it.id), alt: "", loading: "lazy", style: { width: "52px", height: "52px", borderRadius: "14px", objectFit: "cover" }, onerror: (e) => e.target.replaceWith(App.icon(App.kindIcon(it))) }) : App.icon(App.kindIcon(it))),
+      h("span", { class: "i-main" }, h("span", { class: "i-name", text: it.name }),
+        h("span", { class: "i-sub", text: `${App.kindLabel(it)} · ${App.date(it.taken_at)} · ${App.size(it.size)} · 📁 ${(it.dir || "").split(/[\\/]/).pop()}` }),
+        it.snippet ? h("span", { class: "snippet" }, App.highlight(it.snippet, it.highlight)) : null));
+  };
+  /** 검색·목록 결과: 사진·영상만이면 큰 썸네일 격자, 섞여 있으면 목록 — 모두 가상 스크롤 */
+  App.virtualResults = function (first, fetchPage, forceMode) {
+    const allMedia = first.items.length && first.items.every((i) => i.kind === "image" || i.kind === "video");
+    const mode = forceMode || (allMedia ? "grid" : "list");
+    return App.virtual({ total: first.total, pageSize: first.page_size, first: first.items, fetchPage, mode,
+      render: mode === "grid" ? App.renderFileItem : App.renderFileRow });
+  };
   App.renderFileItem = function (it) {
     if (it.kind === "image" || it.kind === "video") {
       return h("a", { class: "thumb-card", href: `#/file/${it.id}`, title: it.name },
         h("img", { src: App.thumb(it.id), alt: `${App.kindLabel(it)} ${it.name}`, loading: "lazy", onerror: (e) => { e.target.replaceWith(App.icon(App.kindIcon(it))); } }),
         it.kind === "video" ? h("span", { class: "badge st-progress", text: "▶ 영상" }) : null);
     }
-    return h("a", { class: "item", href: `#/file/${it.id}` }, App.icon(App.kindIcon(it)),
-      h("span", { class: "i-main" }, h("span", { class: "i-name", text: it.name }),
-        h("span", { class: "i-sub", text: `${App.kindLabel(it)} · ${App.date(it.taken_at)} · ${App.size(it.size)}` }),
-        h("span", { class: "i-sub", text: "📁 " + it.dir }),
-        it.snippet ? h("span", { class: "snippet" }, App.highlight(it.snippet, it.highlight)) : null));
+    return App.renderFileRow(it);
   };
   App.renderResults = function (res, container, loadMore) {
     const media = res.items.filter((i) => i.kind === "image" || i.kind === "video");
@@ -206,10 +257,10 @@
         const box = h("section", {}, h("h2", {}, App.icon(icon), ` ${title} (${sec.total}${sec.more_than ? "개 이상" : "개"})`));
         if (sec.notice) box.append(h("p", { class: "badge st-warn", text: "ℹ " + sec.notice }));
         out.append(box);
-        App.renderResults(sec, box, async (page) => {
-          const more = await App.api("/api/search?" + App.qs({ ...params, page, mode: key === "content" ? "content" : params.mode }));
-          App.renderResults(more[key], box, null);
-        });
+        box.append(App.virtualResults(sec, async (page) => {
+          const more = await App.api("/api/search?" + App.qs({ ...params, page, page_size: sec.page_size, mode: key === "content" ? "content" : params.mode }));
+          return more[key].items;
+        }, key === "content" ? "list" : null));
       };
       section("파일", "file-folder", res.files, "files");
       section("문서 내용", "page-facing-up", res.content, "content");
@@ -375,13 +426,9 @@
     view.append(h("div", { class: "searchbar" }, input, App.btn("내용으로 찾기", () => go(), "btn-primary", "magnifying-glass-tilted-left"), App.micButton((t) => go(t))));
     view.append(h("div", { class: "chips", role: "group", "aria-label": "문서 종류" }, types.map(([v, l]) =>
       h("button", { class: "chip", type: "button", "aria-pressed": String(ext === v), onclick: () => App.go("#/docs?" + App.qs({ ext: v })) }, l))));
-    const box = h("div", { class: "stack" });
-    view.append(box);
-    const load = async (page) => {
-      const r = await App.api("/api/search?" + App.qs({ kind: "doc", ext, page, order: "new", q: "" }));
-      if (page === 1 && !r.files.total) box.append(App.empty("hello", "아직 문서가 없어요. 색인이 끝나면 여기에 보여요."));
-      App.renderResults(r.files, box, load);
-    };
-    await load(1);
+    const r = await App.api("/api/search?" + App.qs({ kind: "doc", ext, page: 1, page_size: 100, order: "new", q: "" }));
+    if (!r.files.total) { view.append(App.empty("hello", "아직 문서가 없어요. 색인이 끝나면 여기에 보여요.", App.link("하드 상태 보기", "#/index", "btn-primary"))); return; }
+    view.append(h("p", { class: "muted", text: `문서 ${r.files.total.toLocaleString()}${r.files.more_than ? "개 이상" : "개"}` }),
+      App.virtualResults(r.files, async (page) => (await App.api("/api/search?" + App.qs({ kind: "doc", ext, page, page_size: 100, order: "new", q: "" }))).files.items, "list"));
   }, { title: "문서" });
 })();

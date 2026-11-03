@@ -61,6 +61,7 @@ class SceneBackend:
 
 class InsightFaceBackend(FaceBackend):
     name = "insightface"
+    match = FACE_MATCH
 
     def __init__(self):
         from insightface.app import FaceAnalysis  # 설치된 경우에만
@@ -74,6 +75,39 @@ class InsightFaceBackend(FaceBackend):
     def detect(self, rgb):
         faces = self.app.get(rgb[:, :, ::-1].copy())
         return [([float(x) for x in f.bbox], f.normed_embedding.astype(np.float32)) for f in faces if f.det_score > 0.6]
+
+
+class SFaceBackend(FaceBackend):
+    """기본 얼굴 모델: OpenCV YuNet(찾기, MIT) + SFace(비교, Apache-2.0). 상업 사용 가능."""
+
+    name = "sface"
+    match = 0.38  # SFace 같은 사람 기준(공식 권장 0.363 근처)
+
+    def __init__(self):
+        import cv2  # 설치된 경우에만
+
+        from .models import SFACE_FILES, sface_dir
+
+        det, rec = (sface_dir() / f["name"] for f in SFACE_FILES)
+        if not det.exists() or not rec.exists():
+            raise FileNotFoundError("얼굴 모델 파일이 없어요. 설정 > 얼굴 모델에서 '얼굴 인식 켜기'를 눌러 주세요")
+        self.cv2 = cv2
+        self.det = cv2.FaceDetectorYN.create(str(det), "", (320, 320), 0.8, 0.3, 5000)
+        self.rec = cv2.FaceRecognizerSF.create(str(rec), "")
+
+    def detect(self, rgb):
+        bgr = np.ascontiguousarray(rgb[:, :, ::-1])
+        hgt, wid = bgr.shape[:2]
+        self.det.setInputSize((wid, hgt))
+        _, faces = self.det.detect(bgr)
+        out = []
+        for f in faces if faces is not None else []:
+            if f[-1] < 0.8 or f[2] < 24 or f[3] < 24:  # 너무 작거나 흐린 얼굴은 건너뜀
+                continue
+            feat = self.rec.feature(self.rec.alignCrop(bgr, f)).flatten().astype(np.float32)
+            n = np.linalg.norm(feat)
+            out.append(([float(f[0]), float(f[1]), float(f[0] + f[2]), float(f[1] + f[3])], feat / n if n else feat))
+        return out
 
 
 class OpenClipBackend(SceneBackend):
@@ -105,15 +139,22 @@ class OpenClipBackend(SceneBackend):
         return (v / np.linalg.norm(v)).astype(np.float32)
 
 
-def load_backends() -> tuple[FaceBackend | None, SceneBackend | None, dict]:
+def load_backends(face_model: str = "sface") -> tuple[FaceBackend | None, SceneBackend | None, dict]:
     reasons = {}
     face = scene = None
-    try:
-        face = InsightFaceBackend()
-    except ImportError:
-        reasons["faces"] = "얼굴 인식 프로그램(insightface)이 설치되지 않았어요"
-    except Exception as e:  # 모델 파일 없음 등
-        reasons["faces"] = str(e) if isinstance(e, FileNotFoundError) else "얼굴 모델을 불러오지 못했어요"
+    order = [SFaceBackend, InsightFaceBackend] if face_model != "insightface" else [InsightFaceBackend, SFaceBackend]
+    for cls in order:
+        try:
+            face = cls()
+            break
+        except ImportError:
+            reasons.setdefault("faces", "얼굴 인식 프로그램이 설치되지 않았어요")
+        except Exception as e:  # 모델 파일 없음 등
+            msg = str(e) if isinstance(e, FileNotFoundError) else "얼굴 모델을 불러오지 못했어요"
+            if cls is order[0]:
+                reasons["faces"] = msg
+    if face is not None:
+        reasons.pop("faces", None)
     try:
         scene = OpenClipBackend()
     except ImportError:
@@ -222,11 +263,21 @@ class Recognizer:
 
             self.face, self.scene = FakeFace(), FakeScene()
         elif autoload and face is None and scene is None and os.environ.get("HDBISEO_NO_MODELS") != "1":
-            self.face, self.scene, self.reasons = load_backends()
+            self.face, self.scene, self.reasons = load_backends(engine.settings().get("face_model", "sface"))
         elif face is None and scene is None:
             self.reasons = {"faces": "모델이 꺼져 있어요", "scenes": "모델이 꺼져 있어요"}
         self._tag_vecs: list | None = None
         self._scene_cache: tuple[int, np.ndarray, list] | None = None
+
+    def reload(self) -> dict:
+        """모델을 설치·교체한 뒤 다시 불러온다."""
+        face, scene, reasons = load_backends(self.engine.settings().get("face_model", "sface"))
+        self.face = face
+        if scene is not None:
+            self.scene = scene
+        self.reasons = reasons
+        self._tag_vecs = None
+        return self.status()
 
     def set_backends(self, face=None, scene=None):
         self.face, self.scene = face, scene
@@ -237,7 +288,7 @@ class Recognizer:
         return [self.phase_voices, self.phase_faces, self.phase_scenes]
 
     def status(self) -> dict:
-        return {"faces": self.face is not None, "scenes": self.scene is not None,
+        return {"faces": self.face is not None, "scenes": self.scene is not None, "face_model": getattr(self.face, "name", None),
                 "faces_reason": self.reasons.get("faces") if self.face is None else None,
                 "scenes_reason": self.reasons.get("scenes") if self.scene is None else None,
                 "voices": True}
@@ -278,7 +329,7 @@ class Recognizer:
         new = 0
         for f in conn.execute("SELECT id, embedding FROM faces WHERE person_id IS NULL AND confirmed=0").fetchall():
             v = _vec(f["embedding"])
-            best, best_s = None, FACE_MATCH
+            best, best_s = None, getattr(self.face, "match", FACE_MATCH)
             for pid, c in cents.items():
                 s = float(np.dot(v, c))
                 if s > best_s:

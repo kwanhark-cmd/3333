@@ -228,3 +228,12 @@ def test_branding_name_icon_palette(client):
     px = Image.open(io.BytesIO(client.get("/api/branding/icon.png").content)).convert("RGB").getpixel((128, 128))
     assert px[1] > 150  # 초록 사진이 아이콘이 됨
     assert client.post("/api/branding/icon", files={"file": ("x.txt", b"not image")}).status_code == 400
+
+
+def test_tray_tooltip(engine):
+    from hdbiseo import tray
+
+    assert "쉬는 중" in tray.tooltip([engine])
+    engine.indexer.state.update(percent=42)
+    engine.indexer.is_running = lambda: True
+    assert "42%" in tray.tooltip([engine])

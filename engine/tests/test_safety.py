@@ -24,12 +24,13 @@ ALLOW = {
     "samples.py": (99, "체험·시험용 예제 폴더를 새로 만드는 코드(사용자 하드디스크와 무관)"),
     "records.py": (1, "음성 일기 소리 파일을 앱 폴더에 저장"),
     "datahome.py": (4, "자료 위치 옮기기: 새 위치로 복사(원래 자료는 그대로)·위치 기록 저장"),
+    "models.py": (3, "얼굴 모델 파일을 앱 자료 폴더(models)에 저장"),
     "update.py": (2, "업데이트 설치 파일을 앱 폴더(updates)에 내려받아 저장"),
     "recognize.py": (2, "장면 모음 내보내기 폴더(앱 폴더 안 새 폴더)에 복사·목록 저장"),
 }
 
 NETWORK = re.compile(r"\b(urllib\.request|urlopen|http\.client|requests\.|httpx\.|socket\.create_connection)")
-NET_ALLOW = {"ai.py", "google.py", "update.py", "server.py"}  # server.py: 이 PC(127.0.0.1)에 엔진이 이미 켜져 있는지 확인만
+NET_ALLOW = {"ai.py", "google.py", "update.py", "server.py", "models.py"}  # server.py: 이 PC(127.0.0.1)에 엔진이 이미 켜져 있는지 확인만
 
 
 def test_no_writes_to_originals():

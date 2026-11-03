@@ -243,6 +243,7 @@ async def set_settings(request: Request):
         from . import winsys
 
         winsys.set_autostart(bool(data["autostart"]))
+        st.save_app_config({"autostart_set": True})
     for k in ("night_start", "night_end"):
         if k in data:
             try:
@@ -584,6 +585,25 @@ def today_card(request: Request):
     return {"type": "search", "title": "무엇이든 찾아보세요", "action": "#/search"}
 
 
+@app.get("/api/home")
+def home(request: Request):
+    """홈 화면 한 번에: 오늘 할 일, 종류별 개수, 사람 얼굴 줄."""
+    e = eng(request)
+    c = e.conn()
+    ov = views.overview(c)
+    try:
+        records = c.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+        contacts = c.execute("SELECT COUNT(*) FROM contacts").fetchone()[0]
+        people = [dict(r) for r in c.execute(
+            "SELECT p.id, p.name, p.cover_face_id, COUNT(DISTINCT f.file_id) AS n FROM persons p JOIN faces f ON f.person_id=p.id"
+            " WHERE p.hidden=0 AND f.confirmed>=0 GROUP BY p.id ORDER BY (p.name<>'') DESC, n DESC LIMIT 12")]
+        dupes = c.execute("SELECT COUNT(*) FROM (SELECT 1 FROM files WHERE hash IS NOT NULL GROUP BY hash HAVING COUNT(*)>1)").fetchone()[0]
+    except Exception:
+        records = contacts = dupes = 0
+        people = []
+    return {"today": today_card(request), "overview": ov, "records": records, "contacts": contacts, "people": people, "dupes": dupes}
+
+
 # ---- 중복 -------------------------------------------------------------
 
 @app.post("/api/duplicates/scan")
@@ -747,10 +767,11 @@ def register_extras() -> None:
     if _extras_done:
         return
     _extras_done = True
-    from . import routes_more, routes_update  # 3·5단계 기능, 업데이트
+    from . import routes_more, routes_setup, routes_update  # 3·5단계 기능, 업데이트, 설정 도우미
 
     routes_more.register(app)
     routes_update.register(app)
+    routes_setup.register(app)
 
 
 def _already_running(port: int) -> bool:
@@ -785,6 +806,12 @@ def run(host: str | None = None, port: int | None = None, open_browser: bool = T
     mount_web()
     if cfg.get("lan_enabled"):
         discovery.start_responder(port)
+    from . import tray, winsys
+
+    tray.start(port)
+    if st.load("default").get("autostart", True) and winsys.autostart_enabled() is False and not st.app_config().get("autostart_set"):
+        winsys.set_autostart(True)  # 기본 켜짐(처음 한 번만 — 사용자가 끄면 그대로)
+        st.save_app_config({"autostart_set": True})
     if open_browser:
         threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{port}/")).start()
     log.info("엔진 시작 %s (포트 %s)", VERSION, port)

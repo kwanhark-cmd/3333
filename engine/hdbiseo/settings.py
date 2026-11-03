@@ -159,7 +159,7 @@ def add_user(name: str, emoji: str = "🙂") -> dict:
 
 # ---- PC 전체 설정(다른 기기 접속 등) ------------------------------------
 
-APP_DEFAULTS = {"lan_enabled": False, "port": 47810, "pair_code": "", "tokens": []}
+APP_DEFAULTS = {"lan_enabled": False, "port": 47810, "pair_code": "", "tokens": [], "autostart_set": False}
 
 
 def app_config() -> dict:

@@ -105,6 +105,8 @@ const contrastCheck = () => {
     await ctx.addInitScript(() => {
       class FakeSR { start() { setTimeout(() => this.onresult && this.onresult({ results: [[{ transcript: window.__say || "2005년 아이들 영상 찾아줘" }]] }), 50); } }
       window.SpeechRecognition = FakeSR; window.webkitSpeechRecognition = FakeSR;
+      // 시험용 마이크 장치
+      if (navigator.mediaDevices) navigator.mediaDevices.enumerateDevices = async () => [{ kind: "audioinput", deviceId: "fake", label: "" }];
     });
     const page = await ctx.newPage();
     global.__page = page;
@@ -348,6 +350,53 @@ const contrastCheck = () => {
       await page.waitForSelector("#page-title:has-text('우리집 자료')");
       await api("/api/settings", { app_name: "" });
     });
+    await step("화면 재설계: 가장 먼저 눈에 띄는 것이 가장 중요한 것인가(홈)", async () => {
+      for (const vp of [{ width: 1280, height: 860 }, { width: 390, height: 844 }]) {
+        const p = await browser.newPage({ viewport: vp });
+        await p.goto(BASE + "#/");
+        await p.waitForSelector(".ktiles");
+        const r = await p.evaluate(() => {
+          const box = (sel) => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return { top: b.top + scrollY, h: b.height, w: b.width, area: b.width * b.height }; };
+          const hero = box(".hero-search"), input = box(".hero-search input"), card = box(".memory") || box(".today"), tiles = [...document.querySelectorAll(".ktile")].map((t) => t.getBoundingClientRect());
+          const strip = box(".ixstrip"), main = box("main .page");
+          const tops = {}; tiles.forEach((t) => { const k = Math.round(t.top); tops[k] = (tops[k] || 0) + 1; });
+          return { hero, input, card, strip, main, maxPerRow: Math.max(...Object.values(tops)), tileArea: Math.max(...tiles.map((t) => t.width * t.height)), tileH: Math.min(...tiles.map((t) => t.height)), tileTop: Math.min(...tiles.map((t) => t.top + scrollY)) };
+        });
+        assert(r.input.h >= 64, "검색창 높이 " + r.input.h);
+        assert(r.hero.w >= r.main.w * 0.95, "검색창이 화면 폭 전체가 아님");
+        assert(r.hero.top < r.card.top && r.card.top < r.tileTop && r.tileTop < r.strip.top, "순서: 검색창 > 오늘 카드 > 타일 > 진행 띠");
+        assert(r.card.area > r.tileArea, "오늘 카드가 타일보다 작음");
+        assert(r.strip.h < r.tileH * 1.2 || vp.width < 500, "진행 띠가 너무 큼");
+        assert(r.maxPerRow <= 2, "같은 크기 타일이 한 줄에 " + r.maxPerRow + "개");
+        await p.close();
+      }
+    });
+    await step("가상 스크롤: 420장 달도 화면에 보이는 것만 그림", async () => {
+      await page.goto(BASE + "#/photos?year=2001&month=1");
+      await page.waitForSelector(".vlist .thumb-card img");
+      const n = await page.locator(".thumb-card").count();
+      assert(n < 200, "그린 칸 " + n);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(800);
+      assert(await page.locator(".thumb-card img").count() > 0, "끝까지 내려도 사진이 그려짐");
+    });
+    await step("설정: 그룹별 카드, 업데이트·문제 신고는 맨 위, 위험 동작은 맨 아래 빨강", async () => {
+      await page.goto(BASE + "#/settings");
+      await page.waitForSelector("#g-danger");
+      const ids = await page.evaluate(() => [...document.querySelectorAll("main .page > section")].map((s) => s.id));
+      assert.strictEqual(ids[0], "update-card");
+      for (const g of ["g-folders", "g-schedule", "g-faces", "g-google", "g-view", "g-data"]) assert(ids.includes(g), g + " 없음");
+      assert.strictEqual(ids[ids.length - 1], "g-danger");
+      assert(await page.locator("main .page > .row a:has-text('문제 신고')").count() === 1);
+    });
+    await step("마이크 장치가 없는 기기: 음성 인식이 있어도 글자 입력칸만", async () => {
+      const p3 = await browser.newPage();
+      await p3.addInitScript(() => { window.webkitSpeechRecognition = function () {}; if (navigator.mediaDevices) navigator.mediaDevices.enumerateDevices = async () => []; });
+      await p3.goto(BASE + "#/search");
+      await p3.waitForSelector("input[type=search]");
+      assert.strictEqual(await p3.locator("button.mic").count(), 0);
+      await p3.close();
+    });
     await step("음성 인식이 없는 기기: 마이크 대신 글자 입력칸", async () => {
       const p2 = await browser.newPage();
       await p2.addInitScript(() => { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; });
@@ -387,12 +436,12 @@ const contrastCheck = () => {
       await api("/api/settings", { reduce_motion: true, font_scale: 1, theme: "light" });
       const p = await browser.newPage();
       await p.goto(BASE + "#/");
-      await p.waitForSelector(".tile");
-      const d = await p.evaluate(() => [getComputedStyle(document.querySelector(".tile")).transitionDuration, getComputedStyle(document.querySelector("#view")).animationDuration]);
+      await p.waitForSelector(".ktile");
+      const d = await p.evaluate(() => [getComputedStyle(document.querySelector(".ktile")).transitionDuration, getComputedStyle(document.querySelector("#view .page")).animationDuration]);
       assert(d.every((x) => x.split(",").every((v) => parseFloat(v) === 0)), JSON.stringify(d));
       await api("/api/settings", { reduce_motion: false });
-      await p.reload(); await p.waitForSelector(".tile");
-      const d2 = await p.evaluate(() => getComputedStyle(document.querySelector(".tile")).transitionDuration);
+      await p.reload(); await p.waitForSelector(".ktile");
+      const d2 = await p.evaluate(() => getComputedStyle(document.querySelector(".ktile")).transitionDuration);
       assert(parseFloat(d2) > 0, d2);
       await p.close();
     });

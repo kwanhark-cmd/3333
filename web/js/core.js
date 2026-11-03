@@ -4,6 +4,8 @@
   const App = (window.App = {});
   App.version = "1.1.0"; // 엔진 VERSION과 같아야 함(시험으로 확인)
   App.routes = [];
+  App._cleanups = [];
+  App.onCleanup = (fn) => App._cleanups.push(fn); // 화면을 떠날 때 할 일(여러 개 가능)
   App.settings = {};
   App.user = localStorage.getItem("hd_user") || "default";
   App.base = localStorage.getItem("hd_base") || ""; // 데스크톱·휴대폰 포장 앱에서 PC 주소
@@ -95,6 +97,7 @@
       const m = path.match(new RegExp("^" + r.pattern.replace(/:(\w+)/g, "([^/]+)") + "$"));
       if (!m) continue;
       if (App.cleanup) { try { App.cleanup(); } catch (e) { /* 무시 */ } App.cleanup = null; }
+      for (const fn of App._cleanups.splice(0)) { try { fn(); } catch (e) { /* 무시 */ } }
       App.stopMedia(document);
       const seq = ++renderSeq;
       const page = h("div", { class: "page" + (opts.keepScroll || revisit ? "" : " view-enter") });
@@ -110,12 +113,13 @@
         if (seq === renderSeq) page.append(App.errorBox(e, () => App.render({ keepScroll: true })));
       }
       if (seq !== renderSeq) return; // 그 사이 다른 화면으로 감
-      page.style.minHeight = "";
-      if (keepY !== null) window.scrollTo(0, keepY);
+      // 가상 목록이 크기를 잡은 다음(2프레임 뒤) 위치를 되돌린다
+      const after = (fn) => requestAnimationFrame(() => requestAnimationFrame(() => { if (seq === renderSeq) fn(); }));
+      if (keepY !== null) after(() => { window.scrollTo(0, keepY); page.style.minHeight = ""; });
       else if (revisit) {
         const y = Number(sessionStorage.getItem(scrollKey(n)) || 0);
-        requestAnimationFrame(() => window.scrollTo(0, y));
-      } else { view.focus({ preventScroll: true }); window.scrollTo(0, 0); }
+        after(() => window.scrollTo(0, y));
+      } else { page.style.minHeight = ""; view.focus({ preventScroll: true }); window.scrollTo(0, 0); }
       return;
     }
     App.go("#/");
@@ -351,6 +355,7 @@
     try {
       App.applySettings(await App.api("/api/settings"));
     } catch (e) { if (App.isShell) App.showOffline(); return; }
+    await App.voice.checkMic();
     // 상태 확인은 어떤 화면으로 시작하든(첫 실행 마법사 포함) 항상 돌린다
     App.pollStatus();
     setInterval(() => { if (!document.hidden) App.pollStatus(); }, 4000);
@@ -448,6 +453,96 @@
     const j = await res.json().catch(() => ({}));
     if (!res.ok) { const e = new Error(j.error || "올리지 못했어요."); e.stage = j.stage; throw e; }
     return j;
+  };
+
+  /** 가상 스크롤: 수만 개 목록·격자도 화면에 보이는 것만 그린다.
+   * opts: { total, pageSize, fetchPage(page) → items[], render(item) → Node, mode: "grid"|"list", rowHeight(list) } */
+  App.virtual = function (opts) {
+    const mode = opts.mode || "grid";
+    const pageSize = opts.pageSize || 120;
+    const box = h("div", { class: "vlist", role: "list" });
+    const win = h("div", { class: "vwin" });
+    box.append(win);
+    const pages = new Map();
+    const loading = new Set();
+    let total = opts.total;
+    let cols = 1, rowH = 100, cell = 100, last = "";
+    const gap = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap-s")) || 10;
+    const layout = () => {
+      const w = box.clientWidth || box.parentElement.clientWidth || 300;
+      if (mode === "grid") {
+        const min = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--thumb-min")) || 140;
+        cols = Math.max(2, Math.floor((w + gap()) / (min + gap())));
+        cell = (w - gap() * (cols - 1)) / cols;
+        rowH = cell + gap();
+      } else {
+        cols = 1;
+        rowH = (opts.rowHeight ? opts.rowHeight() : 110) + gap();
+      }
+      box.style.setProperty("--cols", cols);
+      box.style.setProperty("--cell", cell + "px");
+      box.style.setProperty("--rowh", (rowH - gap()) + "px");
+      box.style.height = Math.ceil(total / cols) * rowH + "px";
+    };
+    const item = (i) => { const p = pages.get(Math.floor(i / pageSize)); return p ? p[i % pageSize] : undefined; };
+    const need = (i) => {
+      const pg = Math.floor(i / pageSize);
+      if (pages.has(pg) || loading.has(pg)) return;
+      loading.add(pg);
+      opts.fetchPage(pg + 1).then((items) => { pages.set(pg, items); loading.delete(pg); if (box.redraw) box.redraw(); else { last = ""; draw(); } })
+        .catch(() => { loading.delete(pg); });
+    };
+    const draw = () => {
+      if (!box.isConnected) return;
+      const top = box.getBoundingClientRect().top + window.scrollY;
+      const y0 = Math.max(0, window.scrollY - top - 600), y1 = window.scrollY - top + window.innerHeight + 600;
+      const r0 = Math.max(0, Math.floor(y0 / rowH)), r1 = Math.min(Math.ceil(total / cols), Math.ceil(y1 / rowH));
+      const key = `${r0}-${r1}-${cols}-${pages.size}`;
+      if (key === last) return;
+      last = key;
+      const kids = [];
+      for (let r = r0; r < r1; r++) {
+        const row = h("div", { class: mode === "grid" ? "vrow" : "", "data-key": "r" + r });
+        for (let c = 0; c < cols; c++) {
+          const i = r * cols + c;
+          if (i >= total) break;
+          const it = item(i);
+          if (it === undefined) { need(i); row.append(h("div", { class: mode === "grid" ? "thumb-card" : "vitem", "aria-hidden": "true" })); continue; }
+          const node = opts.render(it);
+          row.append(mode === "grid" ? node : h("div", { class: "vitem", role: "listitem" }, node));
+        }
+        kids.push(row);
+      }
+      win.style.top = r0 * rowH + "px";
+      App.morph(win, kids);
+    };
+    let raf = 0;
+    const onScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); };
+    const onResize = () => { layout(); last = ""; draw(); };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+    App.onCleanup(() => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onResize); });
+    if (opts.first) pages.set(0, opts.first);
+    let measured = null;
+    const measure = () => { // 목록 한 줄 높이를 실제로 그려서 잰다(글씨 크기에 따라 달라짐)
+      if (measured || mode !== "list") return;
+      const it = item(0);
+      if (it === undefined) return;
+      const probe = h("div", { class: "vitem-probe", style: { position: "absolute", visibility: "hidden", left: "0", right: "0" } }, opts.render(it));
+      box.append(probe);
+      measured = probe.offsetHeight;
+      probe.remove();
+    };
+    if (!opts.rowHeight) opts.rowHeight = () => measured || 110;
+    const start = () => {
+      if (!box.isConnected) { requestAnimationFrame(start); return; }
+      measure(); layout(); last = ""; draw();
+    };
+    requestAnimationFrame(start);
+    const origDraw = draw;
+    box.redraw = () => { if (!measured) { measure(); if (measured) layout(); } last = ""; origDraw(); };
+    box.setTotal = (t) => { total = t; layout(); last = ""; draw(); };
+    return box;
   };
 
   /** 오류 안내 상자(다시 시도 + 문제 신고) — 지금 화면에 살아 있는 요소만 사용 */

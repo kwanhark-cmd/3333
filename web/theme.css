@@ -11,10 +11,11 @@
   /* 글꼴 */
   --font: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
   --fs-base: 18px;          /* 글씨 크기 1단계(보통) */
+  /* 글자 위계 4단계: 크게 보여줄 것(display) > 제목(title) > 본문(body) > 보조(small) */
   --fs-small: 0.85rem;
   --fs-body: 1rem;
-  --fs-title: 1.45rem;
-  --fs-hero: 1.8rem;
+  --fs-title: 1.35rem;
+  --fs-hero: 1.9rem;
   --lh: 1.55;
 
   /* 크기·간격·둥글기 */
@@ -28,6 +29,9 @@
   --gap: 16px;
   --gap-l: 24px;
   --gap-xl: 36px;
+  --gap-card: calc(var(--gap) * 1.5);   /* 카드 사이 간격(1.5배) */
+  --search-h: 68px;                      /* 홈 검색창 높이(64px 이상) */
+  --face: 84px;                          /* 사람 동그란 얼굴 */
   --page-max: 1100px;
   --tile-min: 240px;
   --thumb-min: 140px;
@@ -66,6 +70,15 @@
   --c-on-highlight: #1f1300;
   --c-overlay: rgba(15, 23, 42, .55);
   --c-card-btn: var(--c-accent);      /* 강조 카드(오늘 할 일) 안의 버튼 */
+  /* 종류별 색: 사진=파랑, 영상=보라, 문서=주황, 일기·메모=초록, 사람·연락처=분홍 (타일 배경과 목록 아이콘에 같은 색) */
+  --k-photo: #2563eb;  --k-photo-bg: #dbeafe;
+  --k-video: #7c3aed;  --k-video-bg: #ede9fe;
+  --k-doc: #ea580c;    --k-doc-bg: #ffedd5;
+  --k-diary: #16a34a;  --k-diary-bg: #dcfce7;
+  --k-person: #db2777; --k-person-bg: #fce7f3;
+  --k-tool: #0f766e;   --k-tool-bg: #ccfbf1;
+  --card-border: 0 solid transparent;  /* 테두리만 있는 상자 금지: 채운 카드 + 부드러운 그림자 */
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, .06), 0 6px 20px rgba(15, 23, 42, .08);
   --c-on-card-btn: var(--c-on-accent);
 
   /* 입체감(그림자) — 메인 타일·주요 버튼에만 */
@@ -83,8 +96,8 @@
 /* ---- 어두운 모드 ---- */
 :root[data-theme="dark"] {
   --c-bg: #0b1220;
-  --c-surface: #152036;
-  --c-surface-2: #1f2c47;
+  --c-surface: #1b2740;   /* 바탕보다 한 단계 밝은 카드 */
+  --c-surface-2: #26355a;
   --c-text: #f1f5f9;
   --c-muted: #cbd5e1;
   --c-border: #33435f;
@@ -108,6 +121,13 @@
   --shadow-3d: 0 6px 0 rgba(0, 0, 0, .55), 0 10px 24px rgba(0, 0, 0, .45);
   --shadow-3d-press: 0 2px 0 rgba(0, 0, 0, .55), 0 4px 10px rgba(0, 0, 0, .4);
   --shadow-flat: 0 1px 3px rgba(0, 0, 0, .5);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 22px rgba(0, 0, 0, .35);
+  --k-photo: #60a5fa;  --k-photo-bg: #172c52;
+  --k-video: #a78bfa;  --k-video-bg: #2a1f4d;
+  --k-doc: #fb923c;    --k-doc-bg: #3d2512;
+  --k-diary: #4ade80;  --k-diary-bg: #133322;
+  --k-person: #f472b6; --k-person-bg: #401a30;
+  --k-tool: #2dd4bf;   --k-tool-bg: #113a37;
 }
 
 /* ---- 고대비 모드 ---- */
@@ -143,6 +163,14 @@
   --shadow-flat: 0 0 0 1px #ffffff;
   --bevel: none;
   --border-w: 2px;
+  --card-border: 2px solid #ffffff;
+  --shadow-soft: none;
+  --k-photo: #7cc4ff;  --k-photo-bg: #000000;
+  --k-video: #d6b4ff;  --k-video-bg: #000000;
+  --k-doc: #ffb36b;    --k-doc-bg: #000000;
+  --k-diary: #6dff9e;  --k-diary-bg: #000000;
+  --k-person: #ff9ad5; --k-person-bg: #000000;
+  --k-tool: #5ff5e0;   --k-tool-bg: #000000;
 }
 
 /* ---- 움직임 줄이기 ---- */

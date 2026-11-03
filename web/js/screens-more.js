@@ -40,7 +40,8 @@
   const modelOff = (st, which) => h("div", { class: "card stack" }, App.mascot("warning"),
     h("p", { class: "t-title", text: which === "faces" ? "얼굴 인식이 아직 꺼져 있어요" : "장면 인식이 아직 꺼져 있어요" }),
     h("p", { text: (which === "faces" ? st.faces_reason : st.scenes_reason) || "" }),
-    h("p", { class: "muted", text: "모델 파일을 PC의 앱 폴더(models)에 넣으면 켜져요. 설치 방법은 설명서(docs/모델설치.md)에 있어요. 모든 인식은 PC 안에서만 해요." }));
+    h("p", { class: "muted", text: "모든 인식은 PC 안에서만 해요." }),
+    which === "faces" ? App.link("얼굴 인식 켜기", "#/settings?g=faces", "btn-accent", "sparkles") : h("p", { class: "muted", text: "장면 인식 설치 방법은 설명서(docs/모델설치.md)에 있어요." }));
 
   App.route("/people", async (view) => {
     const st = await App.api("/api/recognition");
@@ -82,10 +83,13 @@
       App.btn("다른 사람과 합치기", async () => mergeDialog(await App.api("/api/persons"), Number(id)), "btn-ghost", "link"),
       d.person.name ? App.link(`'${name}' 사진·영상 찾기`, "#/search?" + App.qs({ q: name }), "btn-primary", "magnifying-glass-tilted-left") : null,
       App.speakButton(`${name}. 사진과 영상 ${d.total}개${d.voices ? `, 목소리 ${d.voices}개` : ""}가 있어요.`)));
-    view.append(h("p", { text: `사진·영상 ${d.total}개` }));
-    view.append(h("div", { class: "grid stagger" }, d.items.map((it) => h("div", { class: "stack", style: { gap: "4px" } }, App.renderFileItem(it),
-      App.btn("이 사람이 아니에요", async () => { await App.api(`/api/faces/${it.face_id}/reject`, { body: {} }); App.render(); }, "btn-ghost btn-small")))));
-    if (page * 60 < d.total) view.append(App.link("다음 쪽", `#/person/${id}?page=${page + 1}`, "btn-ghost"));
+    view.append(h("p", { text: `사진·영상 ${d.total}개 — 잘못 묶인 사진은 ✕(이 사람이 아니에요)를 누르세요.` }));
+    const cell = (it) => h("div", { class: "thumb-card person-cell" }, App.renderFileItem(it),
+      h("button", { class: "not-me", type: "button", "aria-label": `${it.name}: 이 사람이 아니에요`, title: "이 사람이 아니에요",
+        onclick: async () => { await App.api(`/api/faces/${it.face_id}/reject`, { body: {} }); App.toast("이 사진을 묶음에서 뺐어요.", "ok"); App.refresh(); } }, "✕"));
+    view.append(App.virtual({ total: d.total, pageSize: 60, first: d.items, mode: "grid", render: cell,
+      fetchPage: async (pg) => (await App.api(`/api/persons/${id}?page=${pg}`)).items }));
+    void page;
   }, { title: "사람" });
 
   App.route("/voices", async (view, query) => {

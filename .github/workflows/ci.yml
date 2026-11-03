@@ -25,7 +25,16 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: ruff check hdbiseo tests
-      - run: python -m pytest -q
+      - name: 실제 얼굴 모델 시험 준비(리눅스만)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p /tmp/models && cd /tmp/models
+          curl -sSLO https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+          curl -sSLO https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+          curl -sSL -o /tmp/face.jpg https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/lena.jpg
+          echo "HDBISEO_TEST_MODELS=/tmp/models" >> $GITHUB_ENV
+          echo "HDBISEO_TEST_FACE=/tmp/face.jpg" >> $GITHUB_ENV
+      - run: python -m pytest -q -rs
         env:
           PYTHONIOENCODING: utf-8
 
@@ -57,7 +66,7 @@ jobs:
       - run: pip install -r engine/requirements.txt pyinstaller==6.11.1
       - name: 분석 엔진 실행 파일 만들기
         working-directory: engine
-        run: pyinstaller --noconfirm --windowed --name HDBiseo --add-data "../web;web" --collect-submodules hdbiseo --collect-submodules uvicorn --distpath ../dist launcher.py
+        run: pyinstaller --noconfirm --windowed --name HDBiseo --icon ../web/assets/mascot/hello.ico --add-data "../web;web" --collect-submodules hdbiseo --collect-submodules uvicorn --hidden-import pystray._win32 --distpath ../dist launcher.py
       - name: ffmpeg 넣기(영상 썸네일용)
         shell: pwsh
         run: |
