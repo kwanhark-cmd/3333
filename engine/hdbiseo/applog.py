@@ -57,7 +57,7 @@ def setup() -> None:
 def export_bundle(extra: dict) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for p in sorted(log_dir().glob("engine.log*")):
+        for p in sorted(log_dir().glob("engine.log*")) + sorted(log_dir().glob("crash.log")):
             z.write(p, p.name)
         z.writestr("system.json", json.dumps(extra, ensure_ascii=False, indent=2))
         z.writestr("읽어주세요.txt", "이 파일에는 프로그램 기록만 들어 있어요. 파일 내용·연락처·일기는 들어 있지 않아요.")

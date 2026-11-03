@@ -83,7 +83,7 @@ jobs:
           $ok = $false
           for ($i = 0; $i -lt 60; $i++) { try { $r = Invoke-RestMethod http://127.0.0.1:47810/api/health; if ($r.ok) { $ok = $true; break } } catch {}; Start-Sleep 1 }
           Stop-Process $p -Force -ErrorAction SilentlyContinue
-          if (-not $ok) { Get-ChildItem -Recurse $env:HDBISEO_HOME | Select-Object FullName; Get-Content "$env:HDBISEO_HOME\logs\engine.log" -ErrorAction SilentlyContinue; throw "엔진이 켜지지 않음" }
+          if (-not $ok) { Get-ChildItem -Recurse $env:HDBISEO_HOME | Select-Object FullName; Get-Content "$env:HDBISEO_HOME\logs\engine.log" -ErrorAction SilentlyContinue; Get-Content "$env:HDBISEO_HOME\logs\crash.log" -ErrorAction SilentlyContinue; throw "엔진이 켜지지 않음" }
       - name: 설치 프로그램 만들기(Inno Setup)
         shell: pwsh
         run: |
