@@ -150,3 +150,13 @@
 @media (prefers-reduced-motion: reduce) {
   :root { --dur-fast: 0ms; --dur: 0ms; --dur-slow: 0ms; }
 }
+
+/* ---- 색 테마(설정 > 앱 꾸미기). 고대비 모드에서는 쓰지 않는다 ---- */
+:root[data-palette="green"]:not([data-theme="contrast"]) { --c-primary: #15803d; }
+:root[data-palette="purple"]:not([data-theme="contrast"]) { --c-primary: #7e22ce; }
+:root[data-palette="orange"]:not([data-theme="contrast"]) { --c-primary: #c2410c; --c-accent: #1d4ed8; }
+:root[data-palette="pink"]:not([data-theme="contrast"]) { --c-primary: #be185d; }
+:root[data-theme="dark"][data-palette="green"] { --c-primary: #4ade80; }
+:root[data-theme="dark"][data-palette="purple"] { --c-primary: #d8b4fe; }
+:root[data-theme="dark"][data-palette="orange"] { --c-primary: #fdba74; --c-accent: #93c5fd; --c-on-accent: #0b1220; }
+:root[data-theme="dark"][data-palette="pink"] { --c-primary: #f9a8d4; }

@@ -238,3 +238,10 @@ input[type="time"], input[type="number"], select { min-width: 0; }
 .today .btn-accent { background: var(--c-card-btn); color: var(--c-on-card-btn); }
 .item { flex-wrap: wrap; }
 .item .i-main { flex: 1 1 150px; }
+.status-chips { display: flex; flex-wrap: wrap; gap: var(--gap-xs); margin: var(--gap-s) 0; }
+.stchip { text-decoration: none; min-height: 32px; }
+.toast-report { color: inherit; font-weight: 700; white-space: nowrap; }
+.newdata { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--gap) * 5); z-index: 55; display: flex; gap: var(--gap-s); align-items: center;
+  background: var(--c-surface); color: var(--c-text); padding: var(--gap-s) var(--gap); border-radius: var(--radius-pill); box-shadow: var(--shadow-3d); max-width: calc(100vw - 32px); flex-wrap: wrap; }
+.iconchip { display: inline-flex; align-items: center; gap: 6px; }
+.iconchip img { width: 32px; height: 32px; }

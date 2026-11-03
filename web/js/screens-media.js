@@ -107,6 +107,7 @@
     const show = () => {
       clearTimeout(timer);
       const it = items[i];
+      App.stopMedia(stage);
       stage.querySelectorAll("img,video").forEach((e) => e.remove());
       caption.textContent = `${App.date(it.taken_at)}${it.place ? " · " + it.place : ""}  (${i + 1}/${items.length})`;
       if (it.kind === "video") {
@@ -123,12 +124,12 @@
     };
     const next = () => { i = (i + 1) % items.length; show(); };
     const prev = () => { i = (i - 1 + items.length) % items.length; show(); };
-    const close = () => { clearTimeout(timer); stage.remove(); history.back(); };
+    const close = () => { clearTimeout(timer); App.stopMedia(stage); stage.remove(); history.back(); };
     const pauseBtn = App.btn("일시정지", () => { paused = !paused; pauseBtn.lastChild.textContent = paused ? "다시 재생" : "일시정지"; if (paused) clearTimeout(timer); else show(); }, "btn-ghost");
     stage.append(caption, h("div", { class: "t-bar" }, App.btn("◀ 이전", prev, "btn-ghost"), pauseBtn, App.btn("다음 ▶", next, "btn-ghost"), App.btn("나가기", close, "btn-accent")));
     const onKey = (e) => { if (e.key === "ArrowRight") next(); else if (e.key === "ArrowLeft") prev(); else if (e.key === "Escape") close(); else if (e.key === " ") pauseBtn.click(); };
     document.addEventListener("keydown", onKey);
-    App.cleanup = () => { clearTimeout(timer); document.removeEventListener("keydown", onKey); stage.remove(); };
+    App.cleanup = () => { clearTimeout(timer); document.removeEventListener("keydown", onKey); App.stopMedia(stage); stage.remove(); };
     document.body.append(stage);
     if (stage.requestFullscreen && query.full) stage.requestFullscreen().catch(() => {});
     show();

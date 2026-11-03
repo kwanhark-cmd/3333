@@ -47,14 +47,20 @@
     try {
       res = await fetch(App.url(path), init);
     } catch (e) {
+      App.queueError("엔진 연결", "엔진에 연결하지 못함: " + path.split("?")[0]);
       App.showOffline();
       throw new Error("PC 엔진에 연결할 수 없어요.");
     }
+    App.flushErrors();
     let data = null;
     const ct = res.headers.get("content-type") || "";
     if (ct.includes("json")) data = await res.json();
     if (res.status === 401 && data && data.need_pair) { App.showPair(); throw new Error(data.error); }
-    if (!res.ok) throw new Error((data && data.error) || "요청을 처리하지 못했어요.");
+    if (!res.ok) {
+      const err = new Error((data && data.error) || "요청을 처리하지 못했어요.");
+      err.stage = data && data.stage;
+      throw err;
+    }
     return data;
   };
   App.qs = (obj) => {
@@ -73,37 +79,88 @@
     const [path, q] = raw.split("?");
     return { path, query: Object.fromEntries(new URLSearchParams(q || "")) };
   };
-  App.render = async function () {
+  // 화면 그리기: 화면마다 새 상자(page)에 그린다. 늦게 끝난 이전 화면 작업은 떨어져 나간 상자에만 쓰므로 안전.
+  let renderSeq = 0;
+  let navCounter = Number(sessionStorage.getItem("hd_nav") || 0);
+  const scrollKey = (n) => "hd_scroll_" + n;
+  App.render = async function (opts = {}) {
     const { path, query } = App.parseHash();
     const view = document.getElementById("view");
+    // 뒤로·앞으로 가기면 history.state에 번호가 있음 → 보던 위치 복원
+    const revisit = history.state && history.state.n !== undefined;
+    let n = revisit ? history.state.n : null;
+    if (n === null) { n = ++navCounter; sessionStorage.setItem("hd_nav", String(navCounter)); history.replaceState({ n }, ""); }
+    App.navId = n;
     for (const r of App.routes) {
       const m = path.match(new RegExp("^" + r.pattern.replace(/:(\w+)/g, "([^/]+)") + "$"));
       if (!m) continue;
       if (App.cleanup) { try { App.cleanup(); } catch (e) { /* 무시 */ } App.cleanup = null; }
-      view.replaceChildren();
-      view.classList.remove("view-enter");
-      void view.offsetWidth;
-      view.classList.add("view-enter");
-      App.setTitle(r.title || "하드 자료 찾기 비서");
+      App.stopMedia(document);
+      const seq = ++renderSeq;
+      const page = h("div", { class: "page" + (opts.keepScroll || revisit ? "" : " view-enter") });
+      const keepY = opts.keepScroll ? window.scrollY : null;
+      if (opts.keepScroll) page.style.minHeight = view.offsetHeight + "px"; // 다시 그리는 동안 높이 유지(위로 튐 방지)
+      view.replaceChildren(page);
+      App.setTitle(r.title || App.appName());
       document.getElementById("nav-back").hidden = path === "/";
       document.getElementById("nav-home").hidden = path === "/";
       try {
-        await r.render(view, ...m.slice(1).map(decodeURIComponent), query);
+        await r.render(page, ...m.slice(1).map(decodeURIComponent), query);
       } catch (e) {
-        view.append(App.empty("warning", e.message || "화면을 여는 중 문제가 생겼어요.", App.btn("다시 해보기", App.render, "btn-primary")));
+        if (seq === renderSeq) page.append(App.errorBox(e, () => App.render({ keepScroll: true })));
       }
-      view.focus({ preventScroll: true });
-      window.scrollTo(0, 0);
+      if (seq !== renderSeq) return; // 그 사이 다른 화면으로 감
+      page.style.minHeight = "";
+      if (keepY !== null) window.scrollTo(0, keepY);
+      else if (revisit) {
+        const y = Number(sessionStorage.getItem(scrollKey(n)) || 0);
+        requestAnimationFrame(() => window.scrollTo(0, y));
+      } else { view.focus({ preventScroll: true }); window.scrollTo(0, 0); }
       return;
     }
     App.go("#/");
   };
-  App.setTitle = (t) => { document.getElementById("page-title").textContent = t; document.title = t + " · 하드 비서"; };
+  /** 화면을 떠날 때 영상·소리 내려받기를 멈춘다(연결을 계속 잡고 있지 않게) */
+  App.stopMedia = (root) => root.querySelectorAll("video, audio").forEach((m) => { try { m.pause(); m.removeAttribute("src"); m.load(); } catch (e) { /* 무시 */ } });
+  /** 자료가 바뀌었을 때: 보던 위치 그대로 다시 그리기 */
+  App.refresh = () => App.render({ keepScroll: true });
+  // 보던 위치를 화면 번호별로 기억
+  let scrollTimer = null;
+  window.addEventListener("scroll", () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => { if (App.navId) sessionStorage.setItem(scrollKey(App.navId), String(Math.round(window.scrollY))); }, 120);
+  }, { passive: true });
+
+  /** 바뀐 부분만 고치기(통째로 다시 그리지 않음 → 스크롤·입력 상태 유지).
+   * 같은 자리에 같은 태그면 속성·글자만 고치고, 버튼·링크는 글자나 모양이 바뀌면 새것으로 바꾼다(눌렀을 때 동작이 최신이 되게). */
+  App.morph = function (parent, newKids) {
+    const old = [...parent.childNodes];
+    newKids = newKids.flat().filter((k) => k !== null && k !== undefined && k !== false).map((k) => (k instanceof Node ? k : document.createTextNode(String(k))));
+    newKids.forEach((nk, i) => {
+      const ok = old[i];
+      if (!ok) { parent.append(nk); return; }
+      if (ok.nodeType === 3 && nk.nodeType === 3) { if (ok.textContent !== nk.textContent) ok.textContent = nk.textContent; return; }
+      const sameKey = ok.nodeType === 1 && nk.nodeType === 1 && ok.nodeName === nk.nodeName && (ok.dataset.key || "") === (nk.dataset.key || "");
+      const interactive = nk.nodeType === 1 && /^(BUTTON|A|INPUT|SELECT|TEXTAREA|IMG|VIDEO)$/.test(nk.nodeName);
+      if (!sameKey || (interactive && ok.outerHTML !== nk.outerHTML)) { ok.replaceWith(nk); return; }
+      if (interactive) return;
+      for (const a of [...ok.attributes]) if (!nk.hasAttribute(a.name)) ok.removeAttribute(a.name);
+      for (const a of [...nk.attributes]) if (ok.getAttribute(a.name) !== a.value) ok.setAttribute(a.name, a.value);
+      App.morph(ok, [...nk.childNodes]);
+    });
+    for (let i = newKids.length; i < old.length; i++) old[i].remove();
+  };
+
+  App.appName = () => (App.settings && App.settings.app_name) || "하드 자료 찾기 비서";
+  App.setTitle = (t) => { document.getElementById("page-title").textContent = t; document.title = t === App.appName() ? t : `${t} · ${App.appName()}`; };
 
   // ---- 알림·확인 창 ----
   App.toast = function (msg, type = "", ms = 3500) {
     const icon = { ok: "check-mark-button", danger: "cross-mark", warn: "warning" }[type] || "light-bulb";
-    const t = h("div", { class: `toast t-${type}` }, App.icon(icon), h("div", { class: "grow" }, msg));
+    const bad = type === "warn" || type === "danger";
+    const t = h("div", { class: `toast t-${type}`, role: bad ? "alert" : "status" }, App.icon(icon), h("div", { class: "grow" }, msg),
+      bad ? h("a", { class: "toast-report", href: App.url("/api/report"), download: "hdbiseo_report.zip", text: "문제 신고" }) : null);
+    if (bad) ms = Math.max(ms, 6000);
     document.getElementById("toasts").append(t);
     setTimeout(() => t.remove(), ms);
   };
@@ -167,11 +224,19 @@
     root.dataset.font = String(s.font_scale ?? 1);
     root.dataset.theme = s.theme || "light";
     root.dataset.motion = s.reduce_motion ? "reduce" : "full";
+    root.dataset.palette = s.palette || "blue";
+    if (s.app_name !== undefined) {
+      const fav = document.querySelector("link[rel=icon]");
+      if (fav) { fav.type = "image/png"; fav.href = App.url(`/api/branding/icon.png?user=${encodeURIComponent(App.user)}&v=${encodeURIComponent((s.app_icon || "") + (s.icon_v || ""))}`); }
+      const t = document.getElementById("page-title");
+      if (t && App.parseHash().path === "/") App.setTitle(App.appName());
+    }
     try { localStorage.setItem("hd_look", JSON.stringify({ f: s.font_scale, t: s.theme, m: s.reduce_motion })); } catch (e) { /* 무시 */ }
   };
   App.saveSettings = async function (patch) {
     const s = await App.api("/api/settings", { body: patch });
     App.applySettings(s);
+    App.pollStatus(); // 저장 즉시 상태 표시 반영
     return s;
   };
 
@@ -286,6 +351,9 @@
     try {
       App.applySettings(await App.api("/api/settings"));
     } catch (e) { if (App.isShell) App.showOffline(); return; }
+    // 상태 확인은 어떤 화면으로 시작하든(첫 실행 마법사 포함) 항상 돌린다
+    App.pollStatus();
+    setInterval(() => { if (!document.hidden) App.pollStatus(); }, 4000);
     if (!App.settings.first_run_done && !location.hash.startsWith("#/wizard")) {
       const roots = await App.api("/api/roots");
       if (!roots.length) { App.go("#/wizard"); return; }
@@ -296,6 +364,90 @@
       const hl = await App.api("/api/health");
       if (hl.version && hl.version !== App.version) App.toast(`보기 화면(${App.version})과 PC 엔진(${hl.version}) 버전이 달라요. 설정 > 업데이트 확인을 눌러 주세요.`, "warn", 10000);
     } catch (e) { /* 무시 */ }
+  };
+
+  // ---- 실패 기록: 엔진이 꺼져 있을 때 생긴 실패는 모아 두었다가 다시 연결되면 보냄 ----
+  App.queueError = (stage, message) => {
+    try { const q = JSON.parse(localStorage.getItem("hd_errq") || "[]"); q.push({ stage, message, at: Date.now() }); localStorage.setItem("hd_errq", JSON.stringify(q.slice(-20))); } catch (e) { /* 무시 */ }
+  };
+  App.flushErrors = () => {
+    let q = [];
+    try { q = JSON.parse(localStorage.getItem("hd_errq") || "[]"); } catch (e) { return; }
+    if (!q.length) return;
+    localStorage.setItem("hd_errq", "[]");
+    for (const x of q) fetch(App.url("/api/client-error"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(x) }).catch(() => {});
+  };
+
+  // ---- 상태 표시(색인 / 얼굴 모델 / 구글 / 엔진) — 몇 초마다 바뀐 부분만 고침 ----
+  App.status = null;
+  App.statusChips = function () {
+    const box = h("div", { class: "status-chips", role: "status", "aria-label": "프로그램 상태" });
+    App.fillStatus(box);
+    return box;
+  };
+  App.fillStatus = function (box) {
+    const s = App.status;
+    const chip = (cls, text, href, key) => h("a", { class: "badge stchip " + cls, href, "data-key": key, text });
+    if (!s) { App.morph(box, [chip("st-danger", "✖ PC 엔진 연결 안 됨", "#/settings", "engine")]); return; }
+    const ix = s.index;
+    const idx = !ix.roots ? chip("st-warn", "! 하드디스크를 골라 주세요", "#/wizard?step=2", "ix")
+      : ix.disconnected ? chip("st-danger", `✖ 하드 연결 끊김 ${ix.disconnected}개`, "#/index", "ix")
+      : ix.running ? chip(ix.paused ? "st-warn" : "st-progress", ix.paused ? `‖ 색인 멈춤 ${ix.percent}%` : `◔ 색인 중 ${ix.percent}%`, "#/index", "ix")
+      : ix.done ? chip("st-ok", `✔ 색인 완료 ${ix.total.toLocaleString()}개`, "#/index", "ix")
+      : chip("st-warn", "! 색인 이어서 하기", "#/index", "ix");
+    const face = s.faces.on ? chip("st-ok", "✔ 얼굴 인식 켜짐", "#/people", "face") : chip("st-warn", "! 얼굴 인식 꺼짐", "#/settings?g=faces", "face");
+    const g = s.google.connected ? chip("st-ok", "✔ 구글 연결됨", "#/records/import", "g")
+      : s.google.configured ? chip("st-warn", "! 구글 연결 필요", "#/records/import", "g") : chip("", "– 구글 연결 안 함", "#/settings?g=google", "g");
+    const e = chip("st-ok", "✔ PC 엔진 연결됨", "#/settings", "engine");
+    const sample = ix.sample_roots && !ix.real_roots ? chip("st-warn", "체험용 예제로 보는 중", "#/wizard?step=2", "sample") : null;
+    App.morph(box, [idx, face, g, e, sample]);
+  };
+  let lastTotal = null;
+  let fails = 0;
+  App.pollStatus = async function () {
+    try {
+      const r = await fetch(App.url("/api/status"), { headers: { "x-hd-user": App.user, ...(localStorage.getItem("hd_token") ? { "x-hd-token": localStorage.getItem("hd_token") } : {}) }, credentials: "include" });
+      if (!r.ok) throw new Error();
+      App.status = await r.json();
+      fails = 0;
+      App.flushErrors();
+    } catch (e) {
+      App.status = null;
+      if (++fails === 2) { App.queueError("엔진 연결", "상태 확인 실패"); App.showOffline(); }
+    }
+    document.querySelectorAll(".status-chips").forEach(App.fillStatus);
+    // 목록을 보는 중 새 자료가 생기면: 자동으로 다시 그리지 않고(위치 유지) '새로 보기' 버튼만
+    const total = App.status ? App.status.index.total : null;
+    if (lastTotal !== null && total !== null && total !== lastTotal && /^\/(photos|search|docs|records|people|memories|places)/.test(App.parseHash().path)) App.showNewData();
+    if (total !== null) lastTotal = total;
+  };
+  App.showNewData = function () {
+    if (document.getElementById("newdata")) return;
+    const pill = h("div", { id: "newdata", class: "newdata", role: "status" }, h("span", { text: "새 자료가 있어요" }),
+      App.btn("새로 보기", () => { pill.remove(); App.refresh(); }, "btn-accent btn-small"),
+      App.btn("닫기", () => pill.remove(), "btn-ghost btn-small"));
+    document.body.append(pill);
+  };
+  window.addEventListener("hashchange", () => { const p = document.getElementById("newdata"); if (p) p.remove(); });
+
+  /** '파일 불러오기' 버튼: 파일을 고르면 onFile(file) 실행 */
+  App.fileButton = function (label, accept, onFile, cls = "btn-primary", icon = "inbox-tray", aria) {
+    const inp = h("input", { type: "file", accept, hidden: true, "aria-label": aria || label });
+    const b = App.btn(label, () => inp.click(), cls, icon);
+    inp.addEventListener("change", async () => {
+      if (!inp.files.length) return;
+      b.disabled = true;
+      try { await onFile(inp.files[0]); } catch (e) { App.toast(e.message, "warn"); } finally { b.disabled = false; inp.value = ""; }
+    });
+    return h("span", { class: "filebtn" }, b, inp);
+  };
+  App.upload = async function (path, fields) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    const res = await fetch(App.url(path), { method: "POST", body: fd, headers: { "x-hd-user": App.user }, credentials: "include" });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { const e = new Error(j.error || "올리지 못했어요."); e.stage = j.stage; throw e; }
+    return j;
   };
 
   /** 오류 안내 상자(다시 시도 + 문제 신고) — 지금 화면에 살아 있는 요소만 사용 */

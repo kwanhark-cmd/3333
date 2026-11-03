@@ -12,15 +12,15 @@
     let timer = null;
     const draw = async () => {
       const d = await App.api("/api/duplicates");
-      box.replaceChildren();
-      box.append(h("div", { class: "card row" }, App.icon("broom"), h("div", { class: "grow" },
+      const kids = [];
+      kids.push(h("div", { class: "card row" }, App.icon("broom"), h("div", { class: "grow" },
         h("div", { class: "t-title", text: d.state.running ? "비교하는 중…" : `같은 파일 묶음 ${d.total}개` }),
         h("div", { class: "muted", text: d.state.running ? `${d.state.done}/${d.state.total}` : `정리하면 약 ${App.size(d.saving_bytes)} 비울 수 있어요` })),
         App.btn(d.state.running ? "찾는 중" : "중복 찾기", async () => { await App.api("/api/duplicates/scan", { body: {} }); draw(); }, "btn-accent", "magnifying-glass-tilted-left", { disabled: d.state.running })));
-      if (d.state.running) { clearTimeout(timer); timer = setTimeout(draw, 1200); return; }
-      if (!d.items.length) { box.append(App.empty("celebrate", "같은 파일이 없거나 아직 찾지 않았어요.")); return; }
+      if (d.state.running) { App.morph(box, kids); clearTimeout(timer); timer = setTimeout(draw, 1200); return; }
+      if (!d.items.length) { kids.push(App.empty("celebrate", "같은 파일이 없거나 아직 찾지 않았어요.")); App.morph(box, kids); return; }
       for (const g of d.items) {
-        box.append(h("section", { class: "card stack" }, h("h3", { text: `똑같은 파일 ${g.count}개 · 각각 ${App.size(g.size)}` }),
+        kids.push(h("section", { class: "card stack", "data-key": g.hash }, h("h3", { text: `똑같은 파일 ${g.count}개 · 각각 ${App.size(g.size)}` }),
           h("div", { class: "list" }, g.files.map((f, idx) => h("div", { class: "item" },
             (f.kind === "image") ? h("img", { class: "ico", src: App.thumb(f.id), alt: "" }) : App.icon(App.kindIcon(f)),
             h("span", { class: "i-main" }, h("a", { class: "i-name", href: `#/file/${f.id}`, text: f.name }), h("span", { class: "i-sub", text: "📁 " + f.dir }),
@@ -30,6 +30,7 @@
               try { const r = await App.api(`/api/files/${f.id}/trash`, { body: { confirm: true } }); App.toast(r.message, "ok", 6000); draw(); } catch (e) { App.toast(e.message, "danger"); }
             }, "btn-danger btn-small", "wastebasket"))))));
       }
+      App.morph(box, kids);
     };
     await draw();
     App.cleanup = () => clearTimeout(timer);
@@ -260,16 +261,11 @@
           : App.btn("구글 연결하기", async () => { try { const r = await App.api("/api/google/auth"); location.href = r.url; } catch (e) { App.toast(e.message, "warn"); } }, "btn-primary", "link"),
         s.google_connected ? App.btn("연결 끊기", async () => { const r = await App.api("/api/google/disconnect", { body: {} }); App.toast(r.message, "ok"); App.applySettings(await App.api("/api/settings")); App.render(); }, "btn-ghost") : null,
         App.link("연결 정보 넣기(설정)", "#/settings", "btn-ghost"))));
-    const upload = (kind, title, desc, accept, icon) => {
-      const inp = h("input", { type: "file", accept, "aria-label": title, style: { minHeight: "var(--btn-h)", width: "100%" } });
-      return h("section", { class: "card stack" }, h("h2", {}, App.icon(icon), " " + title), h("p", { class: "muted", text: desc }), inp,
-        App.btn("가져오기", async () => {
-          if (!inp.files.length) { App.toast("파일을 먼저 골라 주세요.", "warn"); return; }
-          const fd = new FormData(); fd.append("file", inp.files[0]);
-          const res = await fetch(App.url(`/api/import/${kind}`), { method: "POST", body: fd, headers: { "x-hd-user": App.user }, credentials: "include" });
-          const j = await res.json(); App.toast(res.ok ? j.message : j.error, res.ok ? "ok" : "warn", 6000);
-        }, "btn-primary"));
-    };
+    const upload = (kind, title, desc, accept, icon) => h("section", { class: "card stack" }, h("h2", {}, App.icon(icon), " " + title), h("p", { class: "muted", text: desc }),
+      App.fileButton("파일 불러오기", accept, async (file) => {
+        const j = await App.upload(`/api/import/${kind}`, { file });
+        App.toast(j.message, "ok", 6000);
+      }, "btn-primary", "inbox-tray", title));
     view.append(upload("ics", "일정 파일(.ics)", "구글 캘린더 '내보내기'로 받은 파일이나 다른 달력 프로그램의 .ics 파일", ".ics,text/calendar", "calendar"),
       upload("vcf", "연락처 파일(.vcf)", "휴대폰·구글 주소록에서 내보낸 .vcf 파일", ".vcf,text/vcard", "telephone-receiver"),
       upload("keep", "구글 킵(테이크아웃)", "takeout.google.com 에서 'Keep'만 골라 받은 zip 파일", ".zip,.json", "memo"));
@@ -277,9 +273,7 @@
       h("p", { class: "muted", text: "일기 파일(워드·한글·글)이 있는 폴더를 고르세요. 파일 이름이나 줄 맨 앞의 날짜(예: 2005-08-15)로 날짜별 일기로 나눠요. 파일은 바꾸지 않아요." }),
       App.btn("일기장 폴더 고르기", async () => {
         const p = await App.pickFolder("일기장 폴더 고르기"); if (!p) return;
-        const fd = new FormData(); fd.append("path", p);
-        const res = await fetch(App.url("/api/import/diary-folder"), { method: "POST", body: fd, headers: { "x-hd-user": App.user }, credentials: "include" });
-        const j = await res.json(); App.toast(res.ok ? j.message : j.error, res.ok ? "ok" : "warn", 6000);
+        try { const j = await App.upload("/api/import/diary-folder", { path: p }); App.toast(j.message, "ok", 6000); } catch (e) { App.toast(e.message, "warn"); }
       }, "btn-primary", "file-folder")));
   }, { title: "기록 가져오기" });
 

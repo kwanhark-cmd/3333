@@ -175,3 +175,56 @@ def test_browse_and_estimate(client, sample_dir):
     assert "total" in e
     s = client.get("/api/system").json()
     assert s["spec"]["cpu_cores"] >= 1
+
+
+def test_log_masks_keys_and_contacts(tmp_path):
+    import logging
+
+    from hdbiseo.applog import PrivacyFilter
+
+    r = logging.LogRecord("x", logging.ERROR, "", 0, "키 sk-ant-api03-abcdefghijklmnop 비밀 GOCSPX-abc123 번호 010-1234-5678 메일 a@b.com", (), None)
+    PrivacyFilter().filter(r)
+    m = r.getMessage()
+    assert "sk-ant" not in m and "GOCSPX" not in m and "010-1234" not in m and "a@b.com" not in m
+
+
+def test_errors_logged_with_stage(client, caplog):
+    import logging
+
+    with caplog.at_level(logging.ERROR, logger="hdbiseo.server"):
+        r = client.get("/api/browse", params={"path": "/없는/폴더"})
+    assert r.status_code == 400 and r.json()["stage"]
+    assert any("[" in rec.getMessage() and "/api/browse" in rec.getMessage() for rec in caplog.records)
+
+
+def test_sample_root_hidden_when_real_root_added(client, home, sample_dir):
+    s = client.post("/api/samples", json={}).json()
+    client.post("/api/roots", json={"path": s["path"]})
+    st = client.get("/api/status").json()
+    assert st["index"]["sample_roots"] == 1 and st["index"]["real_roots"] == 0
+    client.post("/api/roots", json={"path": str(sample_dir)})
+    roots = client.get("/api/roots").json()
+    assert len(roots) == 1 and not roots[0]["sample"]
+    st = client.get("/api/status").json()
+    assert st["index"]["real_roots"] == 1 and st["faces"]["on"] in (True, False) and "google" in st
+
+
+def test_branding_name_icon_palette(client):
+    import io
+
+    from PIL import Image
+
+    r = client.get("/api/branding/icon.png")
+    assert r.status_code == 200 and Image.open(io.BytesIO(r.content)).size == (256, 256)
+    assert client.get("/api/branding/icon.ico").headers["content-type"] == "image/x-icon"
+    client.post("/api/settings", json={"app_name": "우리집 자료", "palette": "pink", "app_icon": "camera"})
+    m = client.get("/manifest.webmanifest").json()
+    assert m["name"] == "우리집 자료" and m["theme_color"] == "#be185d"
+    assert client.post("/api/settings", json={"palette": "rainbow"}).status_code == 400
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 300), (10, 200, 30)).save(buf, "JPEG")
+    r = client.post("/api/branding/icon", files={"file": ("me.jpg", buf.getvalue())})
+    assert r.status_code == 200 and client.get("/api/settings").json()["app_icon"] == "custom"
+    px = Image.open(io.BytesIO(client.get("/api/branding/icon.png").content)).convert("RGB").getpixel((128, 128))
+    assert px[1] > 150  # 초록 사진이 아이콘이 됨
+    assert client.post("/api/branding/icon", files={"file": ("x.txt", b"not image")}).status_code == 400

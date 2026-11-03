@@ -39,6 +39,11 @@ DEFAULT_SETTINGS: dict = {
     "iphone_support": False,
     "voice_engine": "builtin",  # builtin | external
     "tips_seen": [],
+    "app_name": "하드 자료 찾기 비서",   # 표시 이름(홈·창 제목·알림)
+    "app_icon": "mascot",              # mascot | camera | house | computer-disk | sparkles | family | notebook | custom
+    "palette": "blue",                 # 색 테마: blue | green | purple | orange | pink
+    "autostart": True,                 # 윈도우: PC 시작 시 자동 실행
+    "face_model": "sface",             # sface(상업 사용 가능) | insightface(개인 사용용)
 }
 
 

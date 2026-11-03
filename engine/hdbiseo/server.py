@@ -235,6 +235,14 @@ async def set_settings(request: Request):
         raise UserError("글씨 크기는 3단계 중에서 골라 주세요.")
     if "theme" in data and data["theme"] not in ("light", "dark", "contrast"):
         raise UserError("화면 색 모드를 다시 골라 주세요.")
+    if "palette" in data and data["palette"] not in ("blue", "green", "purple", "orange", "pink"):
+        raise UserError("색 테마를 다시 골라 주세요.")
+    if "app_name" in data:
+        data["app_name"] = str(data["app_name"]).strip()[:24] or "하드 자료 찾기 비서"
+    if "autostart" in data:
+        from . import winsys
+
+        winsys.set_autostart(bool(data["autostart"]))
     for k in ("night_start", "night_end"):
         if k in data:
             try:
@@ -348,6 +356,28 @@ async def index_action(action: str, request: Request):
     else:
         raise UserError("알 수 없는 명령이에요.", 404)
     return index_status(request)
+
+
+@app.get("/api/status")
+def status(request: Request):
+    """홈·설정의 상태 표시(색인 / 얼굴 모델 / 구글 / 엔진)."""
+    e = eng(request)
+    st_ = e.indexer.state
+    roots_ = e.roots()
+    rec = e.recognizer.status()
+    s = e.settings()
+    total = e.conn().execute("SELECT COUNT(*) FROM files").fetchone()[0]
+    return {
+        "engine": {"ok": True, "version": VERSION},
+        "index": {"running": e.indexer.is_running(), "paused": st_.get("paused"), "percent": st_.get("percent", 0),
+                  "phase": st_.get("phase"), "total": total, "roots": len(roots_),
+                  "real_roots": sum(1 for r in roots_ if not r["sample"]), "sample_roots": sum(1 for r in roots_ if r["sample"]),
+                  "disconnected": sum(1 for r in roots_ if r["status"] == "disconnected"),
+                  "done": bool(roots_) and all(r["status"] == "done" for r in roots_)},
+        "faces": {"on": rec["faces"], "reason": rec.get("faces_reason"), "model": rec.get("face_model")},
+        "google": {"connected": bool(s.get("google_token")), "configured": bool(s.get("google_client_id"))},
+        "lan": {"enabled": bool(st.app_config().get("lan_enabled"))},
+    }
 
 
 @app.get("/api/index/status")
@@ -639,7 +669,7 @@ async def reset(request: Request):
 def report(request: Request):
     e = eng(request)
     extra = {"version": VERSION, "schema": dbm.SCHEMA_VERSION, "system": sysinfo.info(),
-             "index": e.indexer.state, "overview": views.overview(e.conn()),
+             "index": {k: v for k, v in e.indexer.state.items() if k != "folder"}, "overview": views.overview(e.conn()),
              "roots": [{"status": r["status"], "files": r["files_count"]} for r in e.roots()]}
     data = applog.export_bundle(extra)
     return Response(data, media_type="application/zip",
@@ -662,8 +692,45 @@ def shutdown(request: Request):
 @app.post("/api/client-error")
 async def client_error(request: Request):
     data = await body(request)
-    log.warning("화면 오류: %s", str(data.get("message", ""))[:300])
+    log.error("[%s] 화면 오류: %s", str(data.get("stage", "화면"))[:20], str(data.get("message", ""))[:300])
     return {"ok": True}
+
+
+@app.get("/api/branding/icon.{fmt}")
+def branding_icon(fmt: str, request: Request, user: str = ""):
+    from . import branding
+
+    uid = user or request.cookies.get("hd_user") or "default"
+    choice = st.load(uid if any(u["id"] == uid for u in st.list_users()) else "default").get("app_icon", "mascot")
+    if fmt not in ("png", "ico"):
+        raise UserError("알 수 없는 그림 형식이에요.", 404)
+    return Response(branding.icon_bytes(choice, "ICO" if fmt == "ico" else "PNG"),
+                    media_type="image/x-icon" if fmt == "ico" else "image/png", headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/api/branding/icon")
+async def branding_upload(request: Request):
+    from fastapi import UploadFile
+
+    from . import branding
+
+    form = await request.form()
+    f = form.get("file")
+    if not isinstance(f, UploadFile) and not hasattr(f, "read"):
+        raise UserError("사진 파일을 골라 주세요.")
+    try:
+        branding.save_custom(await f.read())
+    except ValueError as ex:
+        raise UserError(str(ex)) from ex
+    st.save(eng(request).user_id, {"app_icon": "custom"})
+    return {"ok": True, "message": "내 사진으로 아이콘을 바꿨어요."}
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    from . import branding
+
+    return Response(branding.manifest(st.load("default")), media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
 
 
 def mount_web() -> None:

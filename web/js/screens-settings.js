@@ -43,7 +43,7 @@
   App.route("/settings", async (view) => {
     const s = App.settings;
     const sys = await App.api("/api/system").catch(() => null);
-    view.append(App.updateCard(sys));
+    view.append(h("div", { class: "row" }, App.statusChips(), App.reportLink()), App.updateCard(sys));
     if (sys && sys.data) {
       view.append(h("section", { class: "card stack" }, h("h2", {}, App.icon("computer-disk"), " 자료 위치(색인·설정)"),
         h("p", { text: "며칠 걸려 만든 색인이 여기 있어요. 프로그램을 새로 설치·업데이트해도 이 폴더는 그대로예요." }),
@@ -77,6 +77,26 @@
       h("div", { class: "row" }, h("label", { class: "field" }, "썸네일 저장 한도(MB)", cache),
         App.btn("한도 저장", async () => { await App.saveSettings({ thumb_cache_mb: Number(cache.value) }); App.toast("저장했어요.", "ok"); }, "btn-primary btn-small")),
       h("div", { class: "row" }, App.link("하드 상태", "#/index", "btn-ghost", "computer-disk"), App.link("처음 설정 다시 하기", "#/wizard", "btn-ghost"))));
+
+    // 앱 꾸미기
+    const nameIn = h("input", { type: "text", value: App.appName(), maxlength: 24, "aria-label": "표시 이름" });
+    const icons = [["mascot", "비서"], ["camera", "카메라"], ["house", "집"], ["computer-disk", "디스크"], ["sparkles", "반짝"], ["family", "가족"], ["notebook", "공책"]];
+    view.append(h("section", { class: "card stack", id: "brand-card" }, h("h2", {}, App.icon("sparkles"), " 앱 꾸미기"),
+      h("div", { class: "row" }, h("label", { class: "field" }, "표시 이름(홈·창 제목·알림)", nameIn),
+        App.btn("이름 저장", async () => { await App.saveSettings({ app_name: nameIn.value }); App.toast(`이름을 '${App.appName()}'(으)로 바꿨어요.`, "ok"); App.setTitle("설정"); }, "btn-primary btn-small")),
+      h("strong", { text: "아이콘" }),
+      h("div", { class: "chips", role: "group", "aria-label": "아이콘 고르기" }, icons.map(([v, l]) =>
+        h("button", { class: "chip iconchip", type: "button", "aria-pressed": String(s.app_icon === v), onclick: async () => { await App.saveSettings({ app_icon: v }); App.render(); } },
+          h("img", { src: v === "mascot" ? "assets/mascot/hello.svg" : `assets/emoji/${v}.webp`, alt: "", width: 32, height: 32 }), l)),
+        s.app_icon === "custom" ? h("span", { class: "chip iconchip", "aria-pressed": "true" }, h("img", { src: App.url(`/api/branding/icon.png?user=${App.user}&v=${Date.now()}`), alt: "", width: 32, height: 32 }), "내 사진") : null),
+      h("div", { class: "row" }, App.fileButton("내 사진으로 아이콘", "image/*", async (file) => {
+        const r = await App.upload("/api/branding/icon", { file }); App.toast(r.message, "ok");
+        App.applySettings(await App.api("/api/settings")); App.render();
+      }, "btn-ghost", "camera"),
+        h("a", { class: "btn btn-ghost", href: App.url(`/api/branding/icon.ico?user=${App.user}`), download: "하드비서.ico" }, App.icon("inbox-tray"), "바로가기용 아이콘(.ico) 받기")),
+      h("details", {}, h("summary", { class: "btn btn-ghost btn-small", text: "바탕화면·맥 아이콘 바꾸는 방법(그림)" }),
+        h("img", { src: "assets/guide/shortcut-icon.svg", alt: "윈도우: 아이콘 오른쪽 클릭 → 속성 → 아이콘 변경 → 받은 .ico 고르기. 맥: 정보 가져오기 창의 아이콘 위에 끌어다 놓기", style: { width: "100%", maxWidth: "720px" } })),
+      choice("색 테마", "palette", [["blue", "🔵 파랑"], ["green", "🟢 초록"], ["purple", "🟣 보라"], ["orange", "🟠 주황"], ["pink", "🩷 분홍"]])));
 
     // 사용자
     const users = await App.api("/api/users");

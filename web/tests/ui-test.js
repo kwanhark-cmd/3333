@@ -4,7 +4,7 @@
  * 2) 디자인: 360×640·가장 큰 글씨·어두운·고대비 모드에서 잘림·겹침 없음, 글자 대비(WCAG AA), 움직임 줄이기
  */
 const { chromium } = require("playwright");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -21,7 +21,17 @@ let failed = 0;
 async function step(name, fn) {
   const t0 = Date.now();
   try { await fn(); results.push(`✔ ${name} (${Date.now() - t0}ms)`); }
-  catch (e) { failed++; results.push(`✖ ${name}: ${e.message}`); }
+  catch (e) {
+    failed++;
+    let extra = "";
+    if (global.__page && process.env.UI_DEBUG) {
+      try {
+        await global.__page.screenshot({ path: path.join(process.env.UI_DEBUG, `fail-${failed}.png`) });
+        extra = " | 화면: " + (await global.__page.evaluate(() => location.hash + " :: status=" + JSON.stringify(App.status && App.status.index) + " hidden=" + document.hidden + " :: " + document.body.innerText.slice(0, 300).replace(/\n/g, " / ")));
+      } catch (x) { extra = " | 디버그 실패: " + x.message.slice(0, 200); }
+    }
+    results.push(`✖ ${name}: ${e.message}${extra}`);
+  }
 }
 
 async function api(p, body) {
@@ -97,6 +107,7 @@ const contrastCheck = () => {
       window.SpeechRecognition = FakeSR; window.webkitSpeechRecognition = FakeSR;
     });
     const page = await ctx.newPage();
+    global.__page = page;
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
 
@@ -227,7 +238,6 @@ const contrastCheck = () => {
       for (const [label, file] of [["연락처 파일(.vcf)", "연락처.vcf"], ["일정 파일(.ics)", "구글캘린더.ics"], ["구글 킵(테이크아웃)", "takeout-keep.zip"]]) {
         // 한글 경로 파일은 Playwright가 조용히 무시하므로 내용으로 넘김
         await page.setInputFiles(`input[aria-label='${label}']`, { name: file, mimeType: "application/octet-stream", buffer: fs.readFileSync(path.join(d, file)) });
-        await page.locator("section", { has: page.locator(`input[aria-label='${label}']`) }).locator("button:has-text('가져오기')").click();
         await page.waitForSelector(".toast:has-text('가져왔어요')");
         await page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove()));
       }
@@ -260,6 +270,83 @@ const contrastCheck = () => {
       await page.waitForSelector("h2:has-text('기록')");
       await page.waitForSelector("h2:has-text('연락처')");
       await page.waitForSelector("h2:has-text('문서 내용')");
+    });
+    await step("스크롤 유지: 목록을 내려 보는 중 자료가 갱신돼도 위로 튀지 않음 + '새로 보기'", async () => {
+      const big = path.join(HOME, "큰폴더");
+      const py = `from PIL import Image\nimport os,sys\nd=sys.argv[1]\nos.makedirs(d,exist_ok=True)\nfor i in range(420):\n e=Image.Exif(); e[306]='2001:01:%02d 10:00:00'%(i%28+1)\n Image.new('RGB',(64,48),(i%255,90,160)).save(os.path.join(d,'p%04d.jpg'%i),exif=e.tobytes())`;
+      const g = spawnSync(PY, ["-c", py, big]);
+      assert.strictEqual(g.status, 0, String(g.stderr));
+      await api("/api/roots", { path: big });
+      await api("/api/index/start", {});
+      for (let i = 0; i < 200; i++) { const st = await api("/api/index/status"); if (!st.running && st.state.phase === "done") break; await new Promise((r) => setTimeout(r, 300)); }
+      await page.goto(BASE + "#/photos?year=2001&month=1");
+      await page.waitForSelector(".thumb-card");
+      await page.evaluate(() => window.scrollTo(0, 900));
+      await page.waitForTimeout(300);
+      const y0 = await page.evaluate(() => window.scrollY);
+      assert(y0 > 500, "스크롤이 안 됨 " + y0);
+      // 자료 갱신(새 파일 생김) → 색인 → 상태 확인이 돌아도 위치 그대로
+      spawnSync(PY, ["-c", "from PIL import Image\nimport sys\nImage.new('RGB',(20,20)).save(sys.argv[1])", path.join(big, "new1.jpg")]);
+      await api("/api/index/start", {});
+      await page.waitForSelector("#newdata", { timeout: 20000 });
+      assert.strictEqual(await page.evaluate(() => window.scrollY), y0);
+      await page.click("#newdata button:has-text('새로 보기')");
+      await page.waitForTimeout(800);
+      assert(Math.abs((await page.evaluate(() => window.scrollY)) - y0) < 5, "새로 보기 후 위치가 바뀜");
+    });
+    await step("스크롤 유지: 파일을 열었다가 '뒤로' 오면 보던 위치", async () => {
+      const y0 = await page.evaluate(() => window.scrollY);
+      const card = page.locator(".thumb-card").nth(30);
+      await card.click();
+      await page.waitForSelector(".viewer");
+      await page.goBack();
+      await page.waitForSelector(".thumb-card");
+      await page.waitForTimeout(600);
+      assert(Math.abs((await page.evaluate(() => window.scrollY)) - y0) < 30, "뒤로 왔는데 위치가 바뀜");
+    });
+    await step("실패 → 다시 시도(화면): 오류 상자에서 다시 시도하면 정상, 화면 오류 없음", async () => {
+      let n = 0;
+      await page.route("**/api/timeline/years*", (r) => (n++ === 0 ? r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "시험용 실패", stage: "색인 저장" }) }) : r.continue()));
+      await page.goto(BASE + "#/photos");
+      await page.waitForSelector("[role=alert] >> text=시험용 실패");
+      assert(await page.locator("[role=alert] a:has-text('문제 신고')").count() >= 1, "오류 상자에 문제 신고 없음");
+      await page.click("[role=alert] button:has-text('다시 시도')");
+      await page.waitForSelector("a.tile:has-text('2001년')"); // 실제 폴더를 추가해서 체험용 예제(2005년)는 자동으로 숨겨짐
+      await page.unroute("**/api/timeline/years*");
+    });
+    await step("실패 → 다시 시도(대화상자): 실패 창을 닫고 다시 해도 오류 없음", async () => {
+      let n = 0;
+      await page.route("**/api/persons/merge", (r) => (n++ === 0 ? r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "시험용 합치기 실패" }) }) : r.continue()));
+      const before = (await api("/api/persons")).length;
+      for (let t = 0; t < 2; t++) {
+        await page.goto(BASE + "#/people");
+        await page.click("button:has-text('두 사람 합치기')");
+        await page.click(".modal .actions button:has-text('합치기')");
+        if (t === 0) {
+          await page.waitForSelector(".toast:has-text('시험용 합치기 실패') >> a:has-text('문제 신고')");
+          await page.evaluate(() => document.querySelectorAll(".toast").forEach((x) => x.remove()));
+        } else await page.waitForSelector(".toast:has-text('합쳤어요')");
+      }
+      assert.strictEqual((await api("/api/persons")).length, before - 1);
+      await page.unroute("**/api/persons/merge");
+    });
+    await step("상태 표시: 홈·설정에 4가지 따로, 저장하면 바로 바뀜", async () => {
+      await page.goto(BASE + "#/");
+      for (const t of ["색인", "얼굴 인식", "구글", "PC 엔진"]) await page.waitForSelector(`.status-chips >> text=${t}`);
+      await page.goto(BASE + "#/settings");
+      await page.waitForSelector(".status-chips >> text=구글 연결 안 함");
+      await page.evaluate(() => App.saveSettings({ google_client_id: "x.apps.googleusercontent.com" }));
+      await page.waitForSelector(".status-chips >> text=구글 연결 필요", { timeout: 5000 });
+      await api("/api/settings", { google_client_id: "" });
+    });
+    await step("앱 꾸미기: 표시 이름이 창 제목에 바로 반영", async () => {
+      await page.goto(BASE + "#/settings");
+      await page.fill("input[aria-label='표시 이름']", "우리집 자료");
+      await page.click("button:has-text('이름 저장')");
+      await page.waitForFunction(() => document.title.includes("우리집 자료"));
+      await page.goto(BASE + "#/");
+      await page.waitForSelector("#page-title:has-text('우리집 자료')");
+      await api("/api/settings", { app_name: "" });
     });
     await step("음성 인식이 없는 기기: 마이크 대신 글자 입력칸", async () => {
       const p2 = await browser.newPage();

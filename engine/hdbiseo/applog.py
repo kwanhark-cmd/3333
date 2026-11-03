@@ -19,6 +19,8 @@ _configured = False
 
 _PHONE = re.compile(r"\b01[016789][- ]?\d{3,4}[- ]?\d{4}\b")
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+# 열쇠(API 키·구글 비밀·토큰)처럼 보이는 긴 글자
+_KEY = re.compile(r"\b(sk-[\w-]{8,}|GOCSPX-[\w-]+|ya29\.[\w.-]+|1//[\w-]{20,}|[A-Za-z0-9_-]{32,})")
 
 
 class PrivacyFilter(logging.Filter):
@@ -28,6 +30,7 @@ class PrivacyFilter(logging.Filter):
         msg = record.getMessage()
         msg = _PHONE.sub("[전화번호]", msg)
         msg = _EMAIL.sub("[이메일]", msg)
+        msg = _KEY.sub("[열쇠]", msg)
         record.msg, record.args = msg, ()
         return True
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+from pathlib import Path
 
 from . import db as dbm
 from . import settings as st
@@ -68,6 +69,11 @@ class UserEngine:
                 raise ValueError("이미 추가된 폴더예요.")
             if b.startswith(a.rstrip(os.sep) + os.sep):
                 raise ValueError("이미 추가된 폴더 안에 있는 폴더예요.")
+        sample = norm(str(sample_dir()))
+        if norm(p) != sample:  # 실제 폴더를 고르면 체험용 예제 폴더는 자동으로 숨김(목록에서만 뺌)
+            for r in c.execute("SELECT id, path FROM roots").fetchall():
+                if norm(r["path"]) == sample:
+                    self.remove_root(r["id"])
         ex = [os.path.abspath(x) for x in (excluded or [])]
         cur = c.execute(
             "INSERT INTO roots(path,label,excluded) VALUES(?,?,?)",
@@ -107,10 +113,19 @@ class UserEngine:
             d = dict(r)
             d["excluded"] = json.loads(d["excluded"] or "[]")
             d["connected"] = os.path.isdir(d["path"])
+            d["sample"] = is_sample(d["path"])
             if not d["connected"]:
                 d["status"] = "disconnected"
             out.append(d)
         return out
+
+
+def sample_dir() -> Path:
+    return st.app_home() / "체험용_예제폴더"
+
+
+def is_sample(path: str) -> bool:
+    return norm(path) == norm(str(sample_dir()))
 
 
 _engines: dict[str, UserEngine] = {}

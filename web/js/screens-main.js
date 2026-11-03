@@ -6,7 +6,7 @@
 
   // ================= 홈 =================
   App.route("/", async (view) => {
-    App.setTitle("하드 자료 찾기 비서");
+    App.setTitle(App.appName());
     const today = await App.api("/api/today");
     const card = h("section", { class: "today", "aria-label": "오늘 할 일" });
     if (today.type === "memory" && today.item) {
@@ -20,7 +20,7 @@
     right.append(h("div", { class: "row" }, App.link(labels[today.type] || "열기", today.action, "btn-accent"),
       today.speech ? App.speakButton(today.speech) : null));
     card.append(right);
-    view.append(card);
+    view.append(card, App.statusChips());
 
     const q = h("input", { type: "search", placeholder: "무엇을 찾을까요? 예) 2005년 아이들 영상", "aria-label": "찾을 말" });
     const go = (text, voice) => App.go("#/search?" + App.qs({ q: text ?? q.value, voice: voice ? 1 : "" }));
@@ -107,7 +107,7 @@
           if (!p) return;
           try { await App.api("/api/roots", { body: { path: p } }); App.toast("추가했어요.", "ok"); refresh(); } catch (e) { App.toast(e.message, "warn"); }
         }, "btn-primary", "computer-disk"),
-        App.btn("체험용 예제 폴더로 해보기", async () => {
+        App.status && App.status.index.real_roots ? null : App.btn("체험용 예제 폴더로 해보기", async () => {
           const r = await App.api("/api/samples", { body: {} });
           try { await App.api("/api/roots", { body: { path: r.path, label: "체험용 예제" } }); } catch (e) { /* 이미 있음 */ }
           refresh();
@@ -185,6 +185,7 @@
     let seq = 0;
     const show = async (q, speak) => {
       const my = ++seq;
+      if (App.status && !App.status.index.roots) { out.replaceChildren(App.empty("hello", "먼저 찾을 하드디스크를 골라 주세요.", App.link("하드디스크 고르기", "#/wizard?step=2", "btn-accent"))); return; }
       if (!q && !st.kind && !st.year) { out.replaceChildren(App.empty("searching", "찾을 말을 입력하거나 마이크를 눌러 말해 보세요.")); return; }
       // 지우기는 말로 하지 않는다: 화면의 휴지통 버튼 + 확인 창으로만
       if (/지워|삭제|휴지통|버려/.test(q)) {
@@ -231,7 +232,7 @@
       clearTimeout(timer);
       timer = setTimeout(() => {
         st.q = input.value;
-        history.replaceState(null, "", "#/search?" + App.qs(st));
+        history.replaceState(history.state, "", "#/search?" + App.qs(st));
         show(input.value, false).catch((e) => App.toast(e.message, "warn"));
       }, 250);
     });
@@ -314,7 +315,7 @@
       const st = s.state;
       const o = s.overview;
       const phaseLabel = { list: "파일 목록 만드는 중", detail: "사진 정보·문서 내용 읽는 중", faces: "얼굴 찾는 중", scenes: "장면 꼬리표 붙이는 중", voices: "목소리 구간 찾는 중", disconnected: "연결 끊김 — 기다리는 중", done: "다 했어요", stopped: "멈춤", error: "문제가 생겨 멈춤", idle: "쉬는 중", start: "준비 중" }[st.phase] || st.message;
-      box.replaceChildren(
+      App.morph(box, [
         h("div", { class: "card stack" },
           h("div", { class: "row" }, App.mascot(s.running ? "searching" : st.phase === "done" ? "celebrate" : "hello", "mascot " + (s.running ? "mascot-bounce" : st.phase === "done" ? "celebrate" : "")),
             h("div", { class: "grow" }, h("div", { class: "t-title", text: st.paused ? "잠시 멈춤" : phaseLabel }), h("div", { class: "muted", text: st.message }),
@@ -330,11 +331,14 @@
         h("h2", { text: "하드디스크별 상태" }),
         h("div", { class: "list" }, s.roots.map((r) => {
           const [cls, label] = STATUS[r.status] || ["", r.status];
-          return h("div", { class: `card drive s-${r.status}` }, h("div", { class: "row" },
+          return h("div", { class: `card drive s-${r.status}`, "data-key": "root" + r.id }, h("div", { class: "row" },
             App.icon("computer-disk"), h("div", { class: "grow" }, h("div", { class: "t-name", style: { fontWeight: 700 }, text: r.label }), h("div", { class: "muted small", text: r.path })),
             h("span", { class: "badge " + cls, text: label })),
             h("p", { class: "small", text: `파일 ${r.files_count.toLocaleString()}개 · 마지막 완료 ${r.last_scan_done ? App.date(r.last_scan_done) : "아직 없음"}` }),
-            r.status === "disconnected" ? h("p", { class: "badge st-danger", text: "하드디스크를 다시 연결하면 이어서 해요." }) : null,
+            r.status === "disconnected" ? h("div", { class: "row" }, h("p", { class: "badge st-danger", text: "✖ 하드디스크가 연결되어 있지 않아요. 연결한 뒤 '다시 확인'을 누르면 이어서 해요." }),
+              App.btn("다시 확인", async () => { try { await App.api("/api/index/start", { body: {} }); } catch (e) { App.toast(e.message, "warn"); } draw(true); }, "btn-primary btn-small")) : null,
+            r.status === "done" && !r.files_count ? h("div", { class: "row" }, h("p", { class: "badge st-warn", text: "! 이 폴더에는 파일이 없어요. 다른 폴더를 골라 보세요." }),
+              App.btn("다른 폴더 고르기", async () => { const p = await App.pickFolder(); if (!p) return; try { await App.api("/api/roots", { body: { path: p } }); App.toast("추가했어요. '색인 시작'을 눌러 주세요.", "ok"); draw(true); } catch (e) { App.toast(e.message, "warn"); } }, "btn-primary btn-small")) : null,
             h("div", { class: "row" },
               App.btn("제외 폴더 추가", async () => { const ex = await App.pickFolder("분석에서 뺄 폴더"); if (ex) { await App.api(`/api/roots/${r.id}`, { method: "PATCH", body: { excluded: [...r.excluded, ex] } }); draw(); } }, "btn-ghost btn-small"),
               App.btn("목록에서 빼기", async () => {
@@ -344,7 +348,7 @@
         })),
         h("div", { class: "row" },
           App.btn("하드디스크·폴더 추가", async () => { const p = await App.pickFolder(); if (!p) return; try { await App.api("/api/roots", { body: { path: p } }); draw(); } catch (e) { App.toast(e.message, "warn"); } }, "btn-primary", "computer-disk"),
-          App.link(`읽을 수 없음 목록 (${o.unreadable})`, "#/unreadable", "btn-ghost", "warning")));
+          App.link(`읽을 수 없음 목록 (${o.unreadable})`, "#/unreadable", "btn-ghost", "warning"))]);
     };
     await draw();
     const timer = setInterval(() => { if (!document.hidden && !document.querySelector(".modal-back")) draw().catch(() => {}); }, 2000);
