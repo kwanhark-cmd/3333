@@ -154,3 +154,12 @@ def test_google_sync_with_fake_api(engine):
     assert "accounts.google.com" in google.auth_url("cid", "http://127.0.0.1:47810/api/google/callback", "s")
     with pytest.raises(google.GoogleError):
         google.auth_url("", "u", "s")
+
+
+def test_stray_carriage_returns_tolerated(engine):
+    """윈도우에서 줄바꿈이 두 번 바뀐 파일(\\r\\r\\n)도 읽어야 한다."""
+    c = engine.conn()
+    vcf = "BEGIN:VCARD\r\r\nFN:홍길동\r\r\nTEL:010-0000-0000\r\r\nEND:VCARD\r\r\n"
+    assert records.import_vcf(c, vcf)["added"] == 1
+    ics = "BEGIN:VCALENDAR\r\r\nBEGIN:VEVENT\r\r\nUID:x1\r\r\nSUMMARY:《작품》 회의\r\r\nDTSTART:20240101T100000\r\r\nEND:VEVENT\r\r\nEND:VCALENDAR\r\r\n"
+    assert records.import_ics(c, ics)["added"] == 1

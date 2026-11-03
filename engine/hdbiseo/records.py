@@ -138,6 +138,7 @@ def find_date(text: str) -> str | None:
 def _unfold(text: str) -> list[str]:
     lines: list[str] = []
     for raw in text.replace("\r\n", "\n").split("\n"):
+        raw = raw.rstrip("\r")  # 줄 끝에 남은 \r(윈도우에서 두 번 바뀐 줄바꿈)도 허용
         if raw.startswith((" ", "\t")) and lines:
             lines[-1] += raw[1:]
         else:
@@ -185,6 +186,7 @@ def import_vcf(conn, text: str, source: str = "vcf") -> dict:
     card: dict | None = None
     lines: list[str] = []
     for raw in text.replace("\r\n", "\n").split("\n"):  # 줄 이어짐(공백·quoted-printable '=')
+        raw = raw.rstrip("\r")
         if raw.startswith((" ", "\t")) and lines:
             lines[-1] += raw[1:]
         elif lines and lines[-1].endswith("=") and "QUOTED-PRINTABLE" in lines[-1].upper():
