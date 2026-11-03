@@ -80,6 +80,22 @@ jobs:
           $ff = (Get-Command ffmpeg).Source; $fp = (Get-Command ffprobe).Source
           Copy-Item (Resolve-Path $ff) dist/HDBiseo/bin/ffmpeg.exe -ErrorAction SilentlyContinue
           Copy-Item (Resolve-Path $fp) dist/HDBiseo/bin/ffprobe.exe -ErrorAction SilentlyContinue
+      - name: 진단(콘솔판으로 시작 과정 기록)
+        continue-on-error: true
+        working-directory: engine
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --console --debug=bootloader --name HDBiseoDiag --add-data "../web;web" --collect-submodules hdbiseo --collect-submodules uvicorn --hidden-import pystray._win32 --distpath ../diag launcher.py | Out-Null
+          $env:HDBISEO_HOME = "$env:RUNNER_TEMP\diaghome"; $env:HDBISEO_DIAG = "1"; $env:HDBISEO_PORT = "47811"
+          $p = Start-Process ../diag/HDBiseoDiag/HDBiseoDiag.exe -ArgumentList "--no-browser" -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP\o.txt" -RedirectStandardError "$env:RUNNER_TEMP\e.txt"
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) { try { $r = Invoke-RestMethod http://127.0.0.1:47811/api/health -TimeoutSec 2; if ($r.ok) { $ok = $true; break } } catch {}; Start-Sleep 1 }
+          "진단판 시작 성공: $ok"
+          Stop-Process $p -Force -ErrorAction SilentlyContinue
+          Start-Sleep 1
+          "---- stderr(마지막 60줄) ----"; Get-Content "$env:RUNNER_TEMP\e.txt" -Tail 60 -ErrorAction SilentlyContinue
+          "---- stdout ----"; Get-Content "$env:RUNNER_TEMP\o.txt" -Tail 30 -ErrorAction SilentlyContinue
+          "---- crash.log ----"; Get-Content "$env:RUNNER_TEMP\diaghome\logs\crash.log" -ErrorAction SilentlyContinue
       - name: 실행 파일이 켜지는지 확인
         shell: pwsh
         run: |
@@ -87,10 +103,10 @@ jobs:
           $env:HDBISEO_DIAG = "1"
           $p = Start-Process dist/HDBiseo/HDBiseo.exe -ArgumentList "--no-browser" -PassThru
           $ok = $false
-          for ($i = 0; $i -lt 150; $i++) { try { $r = Invoke-RestMethod http://127.0.0.1:47810/api/health; if ($r.ok) { $ok = $true; break } } catch {}; Start-Sleep 1 }
+          for ($i = 0; $i -lt 150; $i++) { try { $r = Invoke-RestMethod http://127.0.0.1:47810/api/health -TimeoutSec 2; if ($r.ok) { $ok = $true; break } } catch {}; Start-Sleep 1 }
           if (-not $ok) { "프로세스 살아 있음: " + (-not $p.HasExited); if ($p.HasExited) { "종료 코드: " + $p.ExitCode } }
           Stop-Process $p -Force -ErrorAction SilentlyContinue
-          if (-not $ok) { Get-ChildItem -Recurse $env:HDBISEO_HOME | Select-Object FullName; Get-Content "$env:HDBISEO_HOME\logs\engine.log" -ErrorAction SilentlyContinue; Get-Content "$env:HDBISEO_HOME\logs\crash.log" -ErrorAction SilentlyContinue; throw "엔진이 켜지지 않음" }
+          if (-not $ok) { Get-ChildItem -Recurse $env:HDBISEO_HOME | Select-Object FullName; Get-Content "$env:HDBISEO_HOME\logs\engine.log" -ErrorAction SilentlyContinue; Get-Content "$env:HDBISEO_HOME\logs\crash.log" -ErrorAction SilentlyContinue; Get-Content "$env:LOCALAPPDATA\HDBiseo\logs\*.log" -ErrorAction SilentlyContinue; throw "엔진이 켜지지 않음" }
       - name: 설치 프로그램 만들기(Inno Setup)
         shell: pwsh
         run: |
