@@ -84,9 +84,11 @@ jobs:
         shell: pwsh
         run: |
           $env:HDBISEO_HOME = "$env:RUNNER_TEMP\hdhome"
+          $env:HDBISEO_DIAG = "1"
           $p = Start-Process dist/HDBiseo/HDBiseo.exe -ArgumentList "--no-browser" -PassThru
           $ok = $false
           for ($i = 0; $i -lt 150; $i++) { try { $r = Invoke-RestMethod http://127.0.0.1:47810/api/health; if ($r.ok) { $ok = $true; break } } catch {}; Start-Sleep 1 }
+          if (-not $ok) { "프로세스 살아 있음: " + (-not $p.HasExited); if ($p.HasExited) { "종료 코드: " + $p.ExitCode } }
           Stop-Process $p -Force -ErrorAction SilentlyContinue
           if (-not $ok) { Get-ChildItem -Recurse $env:HDBISEO_HOME | Select-Object FullName; Get-Content "$env:HDBISEO_HOME\logs\engine.log" -ErrorAction SilentlyContinue; Get-Content "$env:HDBISEO_HOME\logs\crash.log" -ErrorAction SilentlyContinue; throw "엔진이 켜지지 않음" }
       - name: 설치 프로그램 만들기(Inno Setup)

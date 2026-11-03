@@ -17,6 +17,13 @@ def _crash_log() -> str:
 
 
 if __name__ == "__main__":
+    if os.environ.get("HDBISEO_DIAG") == "1":  # 시험용 진단: 시작 표시 + 40초 넘게 걸리면 어디서 멈췄는지 기록
+        import faulthandler
+
+        with open(_crash_log(), "a", encoding="utf-8") as f:  # 앱 자료 폴더의 기록 파일
+            f.write(time.strftime("%H:%M:%S") + " 부트 시작\n")
+        _diag = open(_crash_log(), "a", encoding="utf-8")  # noqa: SIM115 - 진단 동안 열어 둠
+        faulthandler.dump_traceback_later(40, repeat=False, file=_diag)
     try:
         from hdbiseo.server import run
 
