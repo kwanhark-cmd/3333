@@ -25,6 +25,8 @@ class UserEngine:
         self.recognizer = recognize.Recognizer(self)
         self.indexer = Indexer(self.db_path, self.settings, extra_phases=self.recognizer.phases())
         self._local = threading.local()
+        self._all_conns: list = []
+        self._conn_lock = threading.Lock()
 
     def settings(self) -> dict:
         return st.load(self.user_id)
@@ -34,11 +36,25 @@ class UserEngine:
 
     def conn(self):
         """요청을 처리하는 스레드마다 연결 하나씩."""
-        c = getattr(self._local, "conn", None) if hasattr(self, "_local") else None
+        c = getattr(self._local, "conn", None)
         if c is None:
             c = self.connect()
             self._local.conn = c
+            with self._conn_lock:
+                self._all_conns.append(c)
         return c
+
+    def close_all(self) -> None:
+        """복원·초기화 전에 모든 연결을 닫는다."""
+        self.indexer.stop()
+        with self._conn_lock:
+            for c in self._all_conns:
+                try:
+                    c.close()
+                except Exception:  # 이미 닫힘
+                    pass
+            self._all_conns.clear()
+        self._local = threading.local()
 
     # ---- 분석할 하드·폴더 ------------------------------------------------
     def add_root(self, path: str, label: str | None = None, excluded: list[str] | None = None) -> dict:

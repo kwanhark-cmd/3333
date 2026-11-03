@@ -1,0 +1,8 @@
+# 막힌 것 (BLOCKERS)
+
+| # | 내용 | 상태 / 대안 |
+|---|---|---|
+| 1 | Flutter·안드로이드 SDK가 이 환경에 없음 | 웹 화면 + Electron/Capacitor로 대체(DECISIONS 1). 안드로이드·맥 앱 빌드는 GitHub Actions에서 시도(`continue-on-error`) |
+| 2 | 윈도우 실제 PC에서의 설치·실행은 이 환경에서 확인 불가 | GitHub Actions 윈도우 작업에서 설치 파일을 만들고 실행 파일이 켜지는지 자동 확인 |
+| 3 | cdn.jsdelivr.net 접속 차단 | 글꼴은 GitHub 원본 저장소에서 받음(해결) |
+| 4 | 실제 한글(HWP) 샘플 파일을 만들 한컴 프로그램 없음 | 시험용 OLE 파일 작성기를 직접 만들어 HWP 구조(압축·비압축·긴 레코드·컨트롤 문자)를 시험. 실제 사용자 파일로 추가 확인 권장 |

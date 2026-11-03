@@ -46,6 +46,15 @@ class UserError(Exception):
 app = FastAPI(title=APP_NAME, version=VERSION, docs_url=None, redoc_url=None)
 _dupe_finders: dict[str, dupes.DupeFinder] = {}
 
+# 데스크톱(Electron)·안드로이드(Capacitor) 포장 앱에서 접속 허용
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^(capacitor://localhost|https?://localhost(:\d+)?|app://.*|file://.*)$",
+    allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+)
+
 
 def _is_local(request: Request) -> bool:
     host = request.client.host if request.client else ""
@@ -581,19 +590,17 @@ async def restore(request: Request):
     src = e.dir / "backups" / name
     if not name or not src.exists():
         raise UserError("백업 파일을 찾을 수 없어요.")
-    e.indexer.stop()
-    c = getattr(e._local, "conn", None)
-    if c:
-        c.close()
-        e._local.conn = None
     from . import core
 
+    with core._lock:
+        core._engines.pop(e.user_id, None)
+    e.close_all()
     try:
         dbm.restore(e.db_path, src)
     except ValueError as ex:
         raise UserError(str(ex)) from ex
-    core._engines.pop(e.user_id, None)
-    get_engine(e.user_id)
+    finally:
+        get_engine(e.user_id)
     return {"ok": True, "message": "백업에서 되살렸어요."}
 
 
@@ -628,6 +635,19 @@ def report(request: Request):
     data = applog.export_bundle(extra)
     return Response(data, media_type="application/zip",
                     headers={"Content-Disposition": f"attachment; filename=hdbiseo_report_{time.strftime('%Y%m%d')}.zip"})
+
+
+@app.post("/api/shutdown")
+def shutdown(request: Request):
+    """설정 > 프로그램 끄기 (PC에서만)."""
+    if not _is_local(request):
+        raise UserError("프로그램 끄기는 PC에서만 할 수 있어요.", 403)
+    import threading
+
+    for e in list(__import__("hdbiseo.core", fromlist=["_engines"])._engines.values()):
+        e.indexer.stop(wait=False)
+    threading.Timer(0.8, lambda: os._exit(0)).start()
+    return {"ok": True, "message": "프로그램을 껐어요. 다시 켜려면 바탕화면 아이콘을 누르세요."}
 
 
 @app.post("/api/client-error")

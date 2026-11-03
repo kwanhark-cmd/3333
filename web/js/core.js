@@ -228,12 +228,36 @@
         App.btn("다시 찾기", async () => {
           try { await fetch(App.url("/api/health")); box.remove(); App.render(); } catch (e) { App.toast("아직 연결되지 않았어요.", "warn"); }
         }, "btn-accent btn-block", "magnifying-glass-tilted-left"),
+        App.btn("같은 와이파이에서 자동으로 찾기", async (e) => {
+          e.target.disabled = true; e.target.textContent = "찾는 중… (최대 20초)";
+          const found = await App.scanLan();
+          if (found) { App.base = found; localStorage.setItem("hd_base", found); location.reload(); }
+          else { App.toast("찾지 못했어요. PC 주소를 직접 입력해 주세요.", "warn"); e.target.disabled = false; e.target.textContent = "같은 와이파이에서 자동으로 찾기"; }
+        }, "btn-primary btn-block", "link"),
         App.btn("PC 주소 직접 입력", async () => {
           const v = await App.prompt("PC 주소", "PC 화면 설정에 보이는 주소 (예: 192.168.0.10:47810)", App.base.replace(/^https?:\/\//, ""));
           if (v) { App.base = "http://" + v.replace(/^https?:\/\//, "").replace(/\/$/, ""); localStorage.setItem("hd_base", App.base); location.reload(); }
         }, "btn-ghost btn-block")));
     document.body.append(box);
   };
+  /** 흔한 공유기 주소 범위에서 엔진(포트 47810)을 찾는다(휴대폰·맥 포장 앱용) */
+  App.scanLan = async function () {
+    const nets = ["192.168.0", "192.168.1", "192.168.219", "172.30.1", "10.0.0", "192.168.35", "192.168.10"];
+    const probe = (ip) => new Promise((resolve) => {
+      const ctl = new AbortController();
+      const t = setTimeout(() => { ctl.abort(); resolve(null); }, 900);
+      fetch(`http://${ip}:47810/api/health`, { signal: ctl.signal }).then((r) => r.json()).then((j) => { clearTimeout(t); resolve(j && j.ok ? `http://${ip}:47810` : null); }).catch(() => { clearTimeout(t); resolve(null); });
+    });
+    for (const net of nets) {
+      for (let start = 1; start < 255; start += 64) {
+        const ips = []; for (let i = start; i < Math.min(start + 64, 255); i++) ips.push(`${net}.${i}`);
+        const hit = (await Promise.all(ips.map(probe))).find(Boolean);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  };
+
   App.showPair = async function () {
     if (document.querySelector(".modal-back")) return;
     const code = await App.prompt("연결 번호 입력", "PC 화면 설정 > 다른 기기에서 보기 에 나온 6자리 번호", "", "number");
@@ -255,9 +279,12 @@
     try { const look = JSON.parse(localStorage.getItem("hd_look") || "null"); if (look) App.applySettings({ font_scale: look.f, theme: look.t, reduce_motion: look.m }); } catch (e) { /* 무시 */ }
     document.getElementById("nav-back").addEventListener("click", () => (history.length > 1 ? history.back() : App.go("#/")));
     window.addEventListener("hashchange", App.render);
+    // 휴대폰·맥 포장 앱에서는 PC 주소를 먼저 알아야 한다
+    App.isShell = !!window.Capacitor || location.protocol === "file:";
+    if (App.isShell && !App.base) { App.showOffline(); return; }
     try {
       App.applySettings(await App.api("/api/settings"));
-    } catch (e) { return; }
+    } catch (e) { if (App.isShell) App.showOffline(); return; }
     if (!App.settings.first_run_done && !location.hash.startsWith("#/wizard")) {
       const roots = await App.api("/api/roots");
       if (!roots.length) { App.go("#/wizard"); return; }

@@ -112,8 +112,13 @@ def ffmpeg_path(name: str = "ffmpeg") -> str | None:
     found = shutil.which(name)
     if found:
         return found
-    here = Path(__file__).resolve().parent.parent / "bin" / (name + (".exe" if os.name == "nt" else ""))
-    return str(here) if here.exists() else None
+    exe = name + (".exe" if os.name == "nt" else "")
+    import sys
+
+    for base in (Path(sys.executable).resolve().parent / "bin", Path(__file__).resolve().parent.parent / "bin"):
+        if (base / exe).exists():
+            return str(base / exe)
+    return None
 
 
 _MP4_EPOCH = dt.datetime(1904, 1, 1)

@@ -99,7 +99,11 @@
 
     view.append(h("section", { class: "card stack" }, h("h2", {}, App.icon("light-bulb"), " 도움"),
       h("p", { text: "문제가 생기면 '문제 신고 파일 만들기'를 눌러 만든 파일을 보내 주세요. 파일 내용·연락처·일기는 들어가지 않아요." }),
-      h("a", { class: "btn btn-ghost", href: App.url("/api/report"), download: "hdbiseo_report.zip" }, "문제 신고 파일 만들기"),
+      h("div", { class: "row" }, h("a", { class: "btn btn-ghost", href: App.url("/api/report"), download: "hdbiseo_report.zip" }, "문제 신고 파일 만들기"),
+        App.btn("프로그램 끄기", async () => {
+          if (!(await App.confirm("프로그램 끄기", "PC의 분석 엔진을 꺼요. 색인 중이면 멈추고, 다음에 켜면 이어서 해요.", "끄기", "btn-danger"))) return;
+          try { const r = await App.api("/api/shutdown", { body: {} }); App.toast(r.message, "ok", 8000); } catch (e) { App.toast(e.message, "warn"); }
+        }, "btn-ghost")),
       h("p", { class: "muted small", text: `버전 ${sys ? sys.version : "?"} · PC: ${sys ? `${sys.spec.os}, CPU ${sys.spec.cpu_cores}개, 메모리 ${sys.spec.ram_gb}GB` : ""} · 영상 썸네일 도구(ffmpeg): ${sys && sys.ffmpeg ? "있음" : "없음"}` }),
       h("p", { class: "muted small" }, "3D 이모지: Microsoft Fluent Emoji(MIT) · 글꼴: Pretendard(OFL)")));
   }, { title: "설정" });

@@ -1,0 +1,134 @@
+name: 검사와 빌드
+
+on:
+  push:
+    branches: ["main", "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  engine-test:
+    name: 엔진 테스트 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check hdbiseo tests
+      - run: python -m pytest -q
+        env:
+          PYTHONIOENCODING: utf-8
+
+  ui-test:
+    name: 화면 테스트(흐름·디자인)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - run: pip install -r engine/requirements.txt
+      - run: npm install --no-save playwright@1.49.1 && npx playwright install --with-deps chromium
+      - run: node web/tests/ui-test.js
+
+  windows-installer:
+    name: 윈도우 설치 프로그램
+    needs: engine-test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r engine/requirements.txt pyinstaller==6.11.1
+      - name: 분석 엔진 실행 파일 만들기
+        working-directory: engine
+        run: pyinstaller --noconfirm --windowed --name HDBiseo --add-data "../web;web" --collect-submodules hdbiseo --collect-submodules uvicorn --distpath ../dist launcher.py
+      - name: ffmpeg 넣기(영상 썸네일용)
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          New-Item -ItemType Directory -Force dist/HDBiseo/bin | Out-Null
+          $ff = (Get-Command ffmpeg).Source; $fp = (Get-Command ffprobe).Source
+          Copy-Item (Resolve-Path $ff) dist/HDBiseo/bin/ffmpeg.exe -ErrorAction SilentlyContinue
+          Copy-Item (Resolve-Path $fp) dist/HDBiseo/bin/ffprobe.exe -ErrorAction SilentlyContinue
+      - name: 실행 파일이 켜지는지 확인
+        shell: pwsh
+        run: |
+          $env:HDBISEO_HOME = "$env:RUNNER_TEMP\hdhome"
+          $p = Start-Process dist/HDBiseo/HDBiseo.exe -ArgumentList "--no-browser" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) { try { $r = Invoke-RestMethod http://127.0.0.1:47810/api/health; if ($r.ok) { $ok = $true; break } } catch {}; Start-Sleep 1 }
+          Stop-Process $p -Force
+          if (-not $ok) { throw "엔진이 켜지지 않음" }
+      - name: 설치 프로그램 만들기(Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\Languages\Korean.isl")) { (Get-Content installer.iss) -replace 'compiler:Languages\\Korean.isl','compiler:Default.isl' | Set-Content installer.iss }
+          & $iscc installer.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HDBiseo-Windows-Setup
+          path: dist/HDBiseo-Setup-*.exe
+
+  desktop-mac:
+    name: 맥 보기 앱(Electron)
+    runs-on: macos-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: mkdir -p ../dist/HDBiseo && npx electron-builder --mac dmg --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HDBiseo-Mac
+          path: desktop/dist/*.dmg
+
+  android:
+    name: 안드로이드 보기 앱(Capacitor)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: npm install
+      - run: npx cap add android && npx cap sync android
+      - name: 같은 와이파이의 PC(http) 접속 허용
+        run: sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+      - run: cd android && ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HDBiseo-Android
+          path: desktop/android/app/build/outputs/apk/debug/*.apk
