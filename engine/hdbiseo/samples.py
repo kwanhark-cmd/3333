@@ -274,7 +274,8 @@ def make_record_files(d: Path) -> None:
         "BEGIN:VEVENT\r\nUID:ev1\r\nSUMMARY:[신제품] 기획 회의\r\nDTSTART:20240305T100000\r\nDTEND:20240305T113000\r\n"
         "LOCATION:본사 3층\r\nDESCRIPTION:김철수\\, 이영희와 출시 일정 논의\r\nEND:VEVENT\r\n"
         "BEGIN:VEVENT\r\nUID:ev2\r\nSUMMARY:할머니 생신\r\nDTSTART;VALUE=DATE:20230505\r\nEND:VEVENT\r\n"
-        "BEGIN:VEVENT\r\nUID:ev3\r\nSUMMARY:《가을동화》 촬영\r\nDTSTART:20221010T090000Z\r\nDESCRIPTION:박감독\\, 이영희 출연\r\n END:VEVENT 아님 이어진 줄\r\nEND:VEVENT\r\n"
+        "BEGIN:VEVENT\r\nUID:ev3\r\nSUMMARY:《가을동화》 촬영\r\nDTSTART:20221010T090000Z\r\n"
+        "DESCRIPTION:박감독\\, 이영희 출연\r\n END:VEVENT 아님 이어진 줄\r\nEND:VEVENT\r\n"
         "END:VCALENDAR\r\n", encoding="utf-8")
     (d / "연락처.vcf").write_text(
         "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:김철수\r\nTEL;TYPE=CELL:010-1234-5678\r\nX-RELATION:삼촌\r\nREV:2020-01-02T03:04:05Z\r\nEND:VCARD\r\n"
