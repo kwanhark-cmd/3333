@@ -84,7 +84,7 @@ const contrastCheck = () => {
 };
 
 (async () => {
-  const env = { ...process.env, HDBISEO_HOME: HOME, HDBISEO_PORT: String(PORT), PYTHONIOENCODING: "utf-8" };
+  const env = { ...process.env, HDBISEO_HOME: HOME, HDBISEO_PORT: String(PORT), PYTHONIOENCODING: "utf-8", HDBISEO_FAKE_MODELS: "1" };
   const server = spawn(PY, ["-m", "hdbiseo", "--no-browser"], { cwd: path.join(ROOT, "engine"), env, stdio: "inherit" });
   let browser;
   try {
@@ -181,6 +181,37 @@ const contrastCheck = () => {
       await page.click(".modal >> text=취소");
       assert(fs.existsSync(target), "취소했는데 파일이 사라짐");
     });
+    await step("사람: 얼굴 묶음 → 이름 붙이기 → 이름으로 찾기", async () => {
+      await page.goto(BASE + "#/people");
+      await page.waitForSelector(".thumb-card img");
+      await page.locator(".thumb-card").first().click();
+      await page.click("button:has-text('이름 붙이기')");
+      await page.fill(".modal input", "민수");
+      await page.click(".modal >> text=확인");
+      await page.waitForSelector("#page-title:has-text('민수')");
+      const r = await api("/api/search?q=" + encodeURIComponent("민수 사진"));
+      assert(r.files.total >= 1, "이름으로 찾기 실패");
+    });
+    await step("사람: 두 사람 합치기", async () => {
+      const before = (await api("/api/persons")).length;
+      await page.goto(BASE + "#/people");
+      await page.click("button:has-text('두 사람 합치기')");
+      await page.click(".modal .actions button:has-text('합치기')");
+      await page.waitForSelector(".toast:has-text('합쳤어요')");
+      assert.strictEqual((await api("/api/persons")).length, before - 1);
+    });
+    await step("장면: '바닷가 장면' 찾기 → 모음에 담기", async () => {
+      await api("/api/scene-collections", { name: "여름 바다" });
+      await page.goto(BASE + "#/scenes?q=" + encodeURIComponent("바닷가"));
+      await page.waitForSelector(".thumb-card img[alt^='장면']");
+      await page.locator("button:has-text('모음에 담기')").first().click();
+      await page.click(".modal .actions button:has-text('담기')");
+      await page.waitForSelector(".toast:has-text('담았어요')");
+    });
+    await step("가족 목소리 모음: 구간 보이기", async () => {
+      await page.goto(BASE + "#/voices");
+      await page.waitForSelector("text=누구 목소리일까요?");
+    });
     await step("음성 인식이 없는 기기: 마이크 대신 글자 입력칸", async () => {
       const p2 = await browser.newPage();
       await p2.addInitScript(() => { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; });
@@ -191,7 +222,7 @@ const contrastCheck = () => {
     });
 
     // ---- 디자인 검사 ----
-    const routes = ["#/", "#/search?q=" + encodeURIComponent("계약금 들어간 문서"), "#/photos", "#/photos?year=2005", "#/index", "#/settings", "#/dupes", "#/docs", "#/wizard?step=4", "#/unreadable", "#/memories", "#/places"];
+    const routes = ["#/", "#/search?q=" + encodeURIComponent("계약금 들어간 문서"), "#/photos", "#/photos?year=2005", "#/index", "#/settings", "#/dupes", "#/docs", "#/wizard?step=4", "#/unreadable", "#/memories", "#/places", "#/people", "#/scenes?q=" + encodeURIComponent("바닷가"), "#/voices"];
     const extra = (process.env.UI_EXTRA_ROUTES || "").split(",").filter(Boolean);
     const allRoutes = [...routes, ...extra];
     const looks = [

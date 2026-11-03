@@ -1,9 +1,11 @@
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("HDBISEO_NO_MODELS", "1")  # 시험에서는 진짜 모델을 찾지 않음
 
 
 @pytest.fixture(scope="session")

@@ -9,10 +9,10 @@
 - [x] 포장: PyInstaller + Inno Setup(윈도우), Electron(맥), Capacitor(안드로이드) 설정, GitHub Actions
 
 ## 남은 일
-- [ ] 3단계: 얼굴 인식(모델 넣으면 켜짐)·사람 화면·두 사람 합치기, 장면 꼬리표·장면 검색·장면 모음·내보내기, 목소리 구간
+- [x] 3단계: 얼굴(모델 넣으면 켜짐)·사람 화면·두 사람 합치기·이 사람 아님, 장면 꼬리표·장면 검색·모음·내보내기, 목소리 구간·이름
 - [ ] 5단계: 기록 통합(구글 캘린더·주소록 OAuth, ics/vcf, 킵 테이크아웃, 워드 일기장, 음성 일기), 통합 타임라인, 사람 연결, 인맥 지도, 외부 AI 요약
 - [ ] 누락 점검(docs/검증/누락점검.md), 최종 보고
 
 ## 테스트 실행
-- `cd engine && python -m pytest -q` → 38개 통과
+- `cd engine && python -m pytest -q` → 47개 통과
 - `node web/tests/ui-test.js` → 모두 통과

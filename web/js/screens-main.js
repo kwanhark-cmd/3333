@@ -256,6 +256,10 @@
           try { const r = await App.api(`/api/ai/summarize/${f.id}`, { body: {} }); App.modal("요약", h("p", { text: r.summary }), [{ label: "닫기", value: 1 }]); } catch (e) { App.toast(e.message, "warn"); }
         }, "btn-ghost", "robot") : null)));
     if (f.preview) view.append(h("h2", { text: "문서 내용 미리보기" }), h("div", { class: "doc-preview", text: f.preview }));
+    if (f.voices && f.voices.length) view.append(h("h2", {}, App.icon("speaking-head"), " 목소리 구간"), h("div", { class: "chips" }, f.voices.map((v) =>
+      App.btn(`${v.name || "?"} ${Math.floor(v.t_start / 60)}:${String(Math.floor(v.t_start % 60)).padStart(2, "0")}`, () => {
+        const vid = document.querySelector(".viewer video, .viewer audio"); if (vid) { vid.currentTime = v.t_start; vid.play().catch(() => {}); }
+      }, "btn-ghost btn-small"))));
 
     const notes = h("div", { class: "list" }, (f.notes || []).map((n) => h("div", { class: "item" }, App.icon(n.source === "voice" ? "studio-microphone" : "memo"),
       h("span", { class: "i-main" }, h("span", { class: "i-name", text: n.text }), h("span", { class: "i-sub", text: App.date(n.created_at) })),
@@ -286,7 +290,7 @@
       last = sig;
       const st = s.state;
       const o = s.overview;
-      const phaseLabel = { list: "파일 목록 만드는 중", detail: "사진 정보·문서 내용 읽는 중", faces: "얼굴 찾는 중", scenes: "장면 꼬리표 붙이는 중", disconnected: "연결 끊김 — 기다리는 중", done: "다 했어요", stopped: "멈춤", error: "문제가 생겨 멈춤", idle: "쉬는 중", start: "준비 중" }[st.phase] || st.message;
+      const phaseLabel = { list: "파일 목록 만드는 중", detail: "사진 정보·문서 내용 읽는 중", faces: "얼굴 찾는 중", scenes: "장면 꼬리표 붙이는 중", voices: "목소리 구간 찾는 중", disconnected: "연결 끊김 — 기다리는 중", done: "다 했어요", stopped: "멈춤", error: "문제가 생겨 멈춤", idle: "쉬는 중", start: "준비 중" }[st.phase] || st.message;
       box.replaceChildren(
         h("div", { class: "card stack" },
           h("div", { class: "row" }, App.mascot(s.running ? "searching" : st.phase === "done" ? "celebrate" : "hello", "mascot " + (s.running ? "mascot-bounce" : st.phase === "done" ? "celebrate" : "")),

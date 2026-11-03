@@ -688,7 +688,12 @@ def run(host: str | None = None, port: int | None = None, open_browser: bool = T
     if open_browser:
         threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{port}/")).start()
     log.info("엔진 시작 %s (포트 %s)", VERSION, port)
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    try:
+        # 창 없는 실행 파일에는 콘솔이 없으므로 uvicorn 자체 로그 설정을 끈다(우리 로그 파일만 사용)
+        uvicorn.run(app, host=host, port=port, log_config=None, log_level="warning", access_log=False)
+    except Exception:
+        log.exception("엔진을 시작하지 못했어요")
+        raise
 
 
 if __name__ == "__main__":

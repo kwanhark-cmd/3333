@@ -302,6 +302,7 @@ class Indexer:
                         " face_status='pending', scene_status='pending', indexed_at=? WHERE id=?",
                         (size, mtime, gen, now, old["id"]),
                     )
+                    conn.execute("DELETE FROM voice_segments WHERE file_id=?", (old["id"],))
             else:
                 cur = conn.execute(
                     "INSERT OR IGNORE INTO files(root_id,path,dir,name,ext,kind,size,mtime,generation,"

@@ -5,7 +5,7 @@
   const h = App.h;
 
   const tabs = (active) => h("div", { class: "chips", role: "tablist", "aria-label": "사진·영상 보기 방법" },
-    [["#/photos", "📅 날짜별"], ["#/memories", "✨ 추억"], ["#/places", "📍 장소"], ["#/scenes", "🎬 장면"], ["#/people", "👪 사람"]].map(([href, label]) =>
+    [["#/photos", "📅 날짜별"], ["#/memories", "✨ 추억"], ["#/places", "📍 장소"], ["#/scenes", "🎬 장면"], ["#/people", "👪 사람"], ["#/voices", "🗣 목소리"]].map(([href, label]) =>
       h("a", { class: "chip", href, role: "tab", "aria-pressed": String(href === active), style: { display: "inline-flex", alignItems: "center", textDecoration: "none" } }, label)));
 
   App.route("/photos", async (view, query) => {

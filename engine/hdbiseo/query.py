@@ -44,10 +44,19 @@ CONCEPTS = {
 }
 
 
+def _known(w: str) -> bool:
+    return w in CONCEPTS or w in KIND_WORDS or w in CONTENT_MARKERS or w in SCENE_MARKERS or w in DIARY_WORDS
+
+
 def strip_particle(w: str) -> str:
+    """'계약금이' → '계약금'. '바닷가'처럼 원래 낱말이면 그대로 둔다."""
+    if _known(w):
+        return w
     for p in PARTICLES:
         if w.endswith(p) and len(w) - len(p) >= 2:
-            return w[: -len(p)]
+            stem = w[: -len(p)]
+            if _known(stem) or len(w) >= 4:
+                return stem
     return w
 
 

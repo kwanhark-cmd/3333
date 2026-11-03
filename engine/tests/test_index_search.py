@@ -114,3 +114,14 @@ def test_originals_untouched(sample_dir, engine):
             st = os.stat(p)
             after[p] = (st.st_size, st.st_mtime)
     assert before == after
+
+
+def test_particles():
+    assert query.strip_particle("바닷가") == "바닷가"
+    assert query.strip_particle("계약금이") == "계약금"
+    assert query.strip_particle("사진을") == "사진"
+    assert query.strip_particle("아이들") == "아이들"
+    p = query.parse("계약금이 들어간 한글 문서 보여줘")
+    assert p["mode"] == "content" and p["words"] == ["계약금"] and p["exts"] == ["hwp", "hwpx"]
+    p = query.parse("작년 3월 바닷가 사진")
+    assert p["kind"] == "image" and p["month"] == 3 and "바닷가" in p["words"]
