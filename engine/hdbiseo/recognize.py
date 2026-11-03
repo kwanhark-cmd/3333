@@ -12,3 +12,9 @@ class Recognizer:
 
     def status(self) -> dict:
         return {"faces": False, "scenes": False}
+
+    def scene_search(self, conn, p):
+        return {"items": [], "total": 0, "notice": "장면 인식이 아직 꺼져 있어요."}
+
+    def file_extra(self, conn, file_id):
+        return {}

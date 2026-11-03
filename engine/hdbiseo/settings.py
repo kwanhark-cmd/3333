@@ -138,3 +138,31 @@ def add_user(name: str, emoji: str = "🙂") -> dict:
         _users_path().write_text(json.dumps(users, ensure_ascii=False), encoding="utf-8")
         user_dir(u["id"])
         return u
+
+
+# ---- PC 전체 설정(다른 기기 접속 등) ------------------------------------
+
+APP_DEFAULTS = {"lan_enabled": False, "port": 47810, "pair_code": "", "tokens": []}
+
+
+def app_config() -> dict:
+    with _lock:
+        p = app_home() / "app.json"
+        data = dict(APP_DEFAULTS)
+        if p.exists():
+            try:
+                data.update(json.loads(p.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                pass
+        return data
+
+
+def save_app_config(values: dict) -> dict:
+    with _lock:
+        data = app_config()
+        data.update({k: v for k, v in values.items() if k in APP_DEFAULTS})
+        p = app_home() / "app.json"
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, p)
+        return data
