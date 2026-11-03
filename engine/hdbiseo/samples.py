@@ -264,6 +264,31 @@ def make_pdf(path: Path, lines: list[str]) -> None:
     path.write_bytes(out.getvalue())
 
 
+def make_record_files(d: Path) -> None:
+    """일정(.ics)·연락처(.vcf)·구글 킵 테이크아웃(.zip) 예제."""
+    import json
+
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "구글캘린더.ics").write_text(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:ev1\r\nSUMMARY:[신제품] 기획 회의\r\nDTSTART:20240305T100000\r\nDTEND:20240305T113000\r\n"
+        "LOCATION:본사 3층\r\nDESCRIPTION:김철수\\, 이영희와 출시 일정 논의\r\nEND:VEVENT\r\n"
+        "BEGIN:VEVENT\r\nUID:ev2\r\nSUMMARY:할머니 생신\r\nDTSTART;VALUE=DATE:20230505\r\nEND:VEVENT\r\n"
+        "BEGIN:VEVENT\r\nUID:ev3\r\nSUMMARY:《가을동화》 촬영\r\nDTSTART:20221010T090000Z\r\nDESCRIPTION:박감독\\, 이영희 출연\r\n END:VEVENT 아님 이어진 줄\r\nEND:VEVENT\r\n"
+        "END:VCALENDAR\r\n", encoding="utf-8")
+    (d / "연락처.vcf").write_text(
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:김철수\r\nTEL;TYPE=CELL:010-1234-5678\r\nX-RELATION:삼촌\r\nREV:2020-01-02T03:04:05Z\r\nEND:VCARD\r\n"
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:이영희\r\nTEL:010-2222-3333\r\nEMAIL:younghee@example.com\r\nCATEGORIES:회사\r\nEND:VCARD\r\n"
+        "BEGIN:VCARD\r\nVERSION:2.1\r\nN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:=EB=B0=95;=EA=B0=90=EB=8F=85\r\nTEL:010-9999-0000\r\nEND:VCARD\r\n",
+        encoding="utf-8")
+    with zipfile.ZipFile(d / "takeout-keep.zip", "w") as z:
+        z.writestr("Takeout/Keep/장보기.json", json.dumps({"title": "장보기", "listContent": [{"text": "우유", "isChecked": True}, {"text": "계란", "isChecked": False}],
+                                                        "userEditedTimestampUsec": 1700000000000000, "labels": [{"name": "집안일"}]}, ensure_ascii=False))
+        z.writestr("Takeout/Keep/아이디어.json", json.dumps({"title": "신제품 아이디어", "textContent": "김철수 의견: 색상을 더 밝게",
+                                                         "createdTimestampUsec": 1709000000000000, "labels": [{"name": "신제품"}]}, ensure_ascii=False))
+        z.writestr("Takeout/Keep/지운메모.json", json.dumps({"title": "지운 것", "textContent": "x", "isTrashed": True}))
+
+
 # ---- 전체 샘플 ------------------------------------------------------------
 
 def make_samples(dest: Path, with_real_video: bool = True) -> dict:
@@ -301,6 +326,8 @@ def make_samples(dest: Path, with_real_video: bool = True) -> dict:
     (docs / "메모.txt").write_bytes("은행 비밀번호 바꾸기\n계약금 입금 확인".encode("cp949"))
     diary = dest / "일기장"
     _docx(diary / "2005-08-15 일기.docx", ["오늘은 속초 바닷가에 갔다.", "아이들이 모래성을 쌓으며 즐거워했다. 김철수 삼촌도 함께 왔다."])
+
+    make_record_files(dest / "내기록")
 
     broken = dest / "깨진파일"
     broken.mkdir(parents=True, exist_ok=True)

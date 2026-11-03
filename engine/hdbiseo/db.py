@@ -12,7 +12,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -152,6 +152,9 @@ CREATE TABLE IF NOT EXISTS ai_usage(month TEXT PRIMARY KEY, calls INTEGER, cost_
 CREATE INDEX IF NOT EXISTS ix_files_year_kind ON files(taken_year, kind, taken_at);
 CREATE INDEX IF NOT EXISTS ix_files_kind_size ON files(kind, size);
 ANALYZE;
+""",
+    5: """
+CREATE TABLE IF NOT EXISTS project_records(project_id INTEGER, record_id INTEGER, PRIMARY KEY(project_id, record_id));
 """,
 }
 

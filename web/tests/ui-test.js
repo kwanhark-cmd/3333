@@ -134,6 +134,15 @@ const contrastCheck = () => {
       await page.press("input[type=search]", "Enter");
       await page.waitForSelector(".i-name:has-text('계약서_2023.hwpx')");
     });
+    await step("치는 대로 바로 찾기(엔터 없이)", async () => {
+      await page.goto(BASE + "#/search");
+      await page.type("input[type=search]", "회의록", { delay: 30 });
+      await page.waitForSelector(".i-name:has-text('회의록.docx')");
+    });
+    await step("말로 '지워줘'라고 해도 지우지 않고 버튼 안내", async () => {
+      await page.goto(BASE + "#/search?q=" + encodeURIComponent("계약서 지워줘"));
+      await page.waitForSelector("text=지우기는 말로 할 수 없어요");
+    });
     await step("내용 검색(문장 미리보기 강조)", async () => {
       await page.goto(BASE + "#/search?q=" + encodeURIComponent("계약금 들어간 문서 찾아줘"));
       await page.waitForSelector("mark:has-text('계약금')");
@@ -212,6 +221,46 @@ const contrastCheck = () => {
       await page.goto(BASE + "#/voices");
       await page.waitForSelector("text=누구 목소리일까요?");
     });
+    await step("기록: 연락처·일정·킵 파일 가져오기, 워드 일기장", async () => {
+      const d = path.join(HOME, "체험용_예제폴더", "내기록");
+      await page.goto(BASE + "#/records/import");
+      for (const [label, file] of [["연락처 파일(.vcf)", "연락처.vcf"], ["일정 파일(.ics)", "구글캘린더.ics"], ["구글 킵(테이크아웃)", "takeout-keep.zip"]]) {
+        // 한글 경로 파일은 Playwright가 조용히 무시하므로 내용으로 넘김
+        await page.setInputFiles(`input[aria-label='${label}']`, { name: file, mimeType: "application/octet-stream", buffer: fs.readFileSync(path.join(d, file)) });
+        await page.locator("section", { has: page.locator(`input[aria-label='${label}']`) }).locator("button:has-text('가져오기')").click();
+        await page.waitForSelector(".toast:has-text('가져왔어요')");
+        await page.evaluate(() => document.querySelectorAll(".toast").forEach((t) => t.remove()));
+      }
+      const r = await fetch(BASE + "api/import/diary-folder", { method: "POST", body: new URLSearchParams({ path: path.join(HOME, "체험용_예제폴더", "일기장") }) }).then((x) => x.json());
+      assert.strictEqual(r.added, 1, JSON.stringify(r));
+    });
+    await step("기록: 말로 일기 쓰기 → 저장 → 읽어주기 버튼", async () => {
+      await page.evaluate(() => { window.__say = "오늘은 이영희와 공원에 갔다"; });
+      await page.goto(BASE + "#/diary/new");
+      await page.click("button.mic");
+      await page.waitForFunction(() => document.querySelector("textarea").value.includes("공원"));
+      await page.click("button:has-text('일기 저장')");
+      await page.waitForSelector(".doc-preview:has-text('공원')");
+      await page.waitForSelector("button:has-text('일기 읽어주기')");
+    });
+    await step("기록: 이름 연결 '맞아요' 확인", async () => {
+      await page.waitForSelector(".item:has-text('이영희') >> text=? 확인 필요");
+      await page.click(".item:has-text('이영희') >> button:has-text('맞아요')");
+      await page.waitForSelector(".item:has-text('이영희') >> text=✔ 확인됨");
+    });
+    await step("인맥 지도: 그림과 연결 목록, 확인·수정", async () => {
+      await page.goto(BASE + "#/network");
+      await page.waitForSelector("svg.netmap text:has-text('신제품')");
+      const before = await page.locator(".item:has-text('확인 필요')").count();
+      await page.locator(".item:has-text('확인 필요') >> button:has-text('맞아요')").first().click();
+      await page.waitForFunction((n) => document.querySelectorAll(".item .badge.st-warn").length === n - 1, before);
+    });
+    await step("통합 검색: 파일·기록·연락처 한 번에", async () => {
+      await page.goto(BASE + "#/search?q=" + encodeURIComponent("김철수"));
+      await page.waitForSelector("h2:has-text('기록')");
+      await page.waitForSelector("h2:has-text('연락처')");
+      await page.waitForSelector("h2:has-text('문서 내용')");
+    });
     await step("음성 인식이 없는 기기: 마이크 대신 글자 입력칸", async () => {
       const p2 = await browser.newPage();
       await p2.addInitScript(() => { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; });
@@ -222,7 +271,7 @@ const contrastCheck = () => {
     });
 
     // ---- 디자인 검사 ----
-    const routes = ["#/", "#/search?q=" + encodeURIComponent("계약금 들어간 문서"), "#/photos", "#/photos?year=2005", "#/index", "#/settings", "#/dupes", "#/docs", "#/wizard?step=4", "#/unreadable", "#/memories", "#/places", "#/people", "#/scenes?q=" + encodeURIComponent("바닷가"), "#/voices"];
+    const routes = ["#/", "#/search?q=" + encodeURIComponent("계약금 들어간 문서"), "#/photos", "#/photos?year=2005", "#/index", "#/settings", "#/dupes", "#/docs", "#/wizard?step=4", "#/unreadable", "#/memories", "#/places", "#/people", "#/scenes?q=" + encodeURIComponent("바닷가"), "#/voices", "#/records", "#/contacts", "#/network", "#/records/import", "#/diary/new", "#/record/1", "#/contact/1"];
     const extra = (process.env.UI_EXTRA_ROUTES || "").split(",").filter(Boolean);
     const allRoutes = [...routes, ...extra];
     const looks = [

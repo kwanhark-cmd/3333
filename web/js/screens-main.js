@@ -23,9 +23,9 @@
     view.append(card);
 
     const q = h("input", { type: "search", placeholder: "무엇을 찾을까요? 예) 2005년 아이들 영상", "aria-label": "찾을 말" });
-    const go = (text) => App.go("#/search?" + App.qs({ q: text ?? q.value }));
+    const go = (text, voice) => App.go("#/search?" + App.qs({ q: text ?? q.value, voice: voice ? 1 : "" }));
     q.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
-    view.append(h("div", { class: "searchbar" }, q, App.btn("찾기", () => go(), "btn-primary", "magnifying-glass-tilted-left"), App.micButton((t) => go(t))));
+    view.append(h("div", { class: "searchbar" }, q, App.btn("찾기", () => go(), "btn-primary", "magnifying-glass-tilted-left"), App.micButton((t) => go(t, true))));
 
     const tiles = [
       ["#/search", "magnifying-glass-tilted-left", "찾기", "이름·내용·말로 한 번에"],
@@ -171,8 +171,8 @@
     const input = h("input", { type: "search", value: st.q, placeholder: "예) 계약금 들어간 문서 찾아줘", "aria-label": "찾을 말" });
     const run = (patch = {}) => App.go("#/search?" + App.qs({ ...st, q: input.value, ...patch }));
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
-    view.append(App.tip("search", "파일 이름, 문서 안의 글자, 날짜를 한 번에 찾아요. 마이크를 누르고 \"2005년 아이들 영상 찾아줘\"처럼 말해도 돼요.") || "");
-    view.append(h("div", { class: "searchbar" }, input, App.btn("찾기", () => run(), "btn-primary", "magnifying-glass-tilted-left"), App.micButton((t) => { input.value = t; run({ q: t }); })));
+    view.append(App.tip("search", "파일 이름, 문서 안의 글자, 날짜를 한 번에 찾아요. 글자를 치는 대로 바로 찾고, 마이크를 누르고 \"2005년 아이들 영상 찾아줘\"처럼 말해도 돼요.") || "");
+    view.append(h("div", { class: "searchbar" }, input, App.btn("찾기", () => run(), "btn-primary", "magnifying-glass-tilted-left"), App.micButton((t) => { input.value = t; run({ q: t, voice: 1 }); })));
     const chip = (key, val, label) => h("button", { class: "chip", type: "button", "aria-pressed": String(st[key] === val), onclick: () => run({ [key]: st[key] === val && val ? "" : val }) }, label);
     view.append(h("div", { class: "chips", role: "group", "aria-label": "종류" }, chip("kind", "", "전체"), chip("kind", "image", "📷 사진"), chip("kind", "video", "🎬 영상"), chip("kind", "doc", "📄 문서"), chip("kind", "audio", "🔊 소리")),
       h("div", { class: "chips", role: "group", "aria-label": "찾는 방법" }, chip("mode", "", "이름·전체"), chip("mode", "content", "문서 안의 글자")),
@@ -182,39 +182,62 @@
         h("label", { class: "field" }, "연도", h("input", { type: "number", value: st.year, min: 1950, max: 2100, placeholder: "예) 2005", onchange: (e) => run({ year: e.target.value }) }))));
     const out = h("div", { class: "stack", "aria-live": "polite" });
     view.append(out);
-    if (!st.q && !st.kind && !st.year) { out.append(App.empty("searching", "찾을 말을 입력하거나 마이크를 눌러 말해 보세요.")); return; }
-    out.append(App.empty("searching", "찾는 중이에요…"));
-    const params = { q: st.q, kind: st.kind, order: st.order, year: st.year, mode: st.mode,
-      min_size: st.size === "big" ? 100 * 1024 * 1024 : "", max_size: st.size === "small" ? 1024 * 1024 : "" };
-    const res = await App.api("/api/search?" + App.qs(params));
-    out.replaceChildren();
-    const head = h("div", { class: "row result-head" }, h("p", { class: "grow", text: `${res.understood} 결과` }), App.speakButton(res.speech, "결과 읽어주기"));
-    out.append(head);
-    if (App.settings.tts_enabled && query.voice) App.voice.speak(res.speech);
-    const section = (title, icon, sec, key) => {
-      if (!sec || !sec.items || !sec.items.length) return;
-      const box = h("section", {}, h("h2", {}, App.icon(icon), ` ${title} (${sec.total}${sec.more_than ? "개 이상" : "개"})`));
-      if (sec.notice) box.append(h("p", { class: "badge st-warn", text: "ℹ " + sec.notice }));
-      out.append(box);
-      App.renderResults(sec, box, async (page) => {
-        const more = await App.api("/api/search?" + App.qs({ ...params, page, mode: key === "content" ? "content" : params.mode }));
-        App.renderResults(more[key], box, null);
-      });
+    let seq = 0;
+    const show = async (q, speak) => {
+      const my = ++seq;
+      if (!q && !st.kind && !st.year) { out.replaceChildren(App.empty("searching", "찾을 말을 입력하거나 마이크를 눌러 말해 보세요.")); return; }
+      // 지우기는 말로 하지 않는다: 화면의 휴지통 버튼 + 확인 창으로만
+      if (/지워|삭제|휴지통|버려/.test(q)) {
+        out.replaceChildren(App.empty("warning", "지우기는 말로 할 수 없어요. 파일을 열고 빨간 '휴지통으로 이동' 버튼을 누른 뒤 확인 창에서 한 번 더 확인해 주세요."));
+        if (speak) App.voice.speak("지우기는 말로 할 수 없어요. 화면의 휴지통 버튼을 눌러 주세요.");
+        return;
+      }
+      const params = { q, kind: st.kind, order: st.order, year: st.year, mode: st.mode,
+        min_size: st.size === "big" ? 100 * 1024 * 1024 : "", max_size: st.size === "small" ? 1024 * 1024 : "" };
+      const res = await App.api("/api/search?" + App.qs(params));
+      if (my !== seq) return; // 더 새로운 입력이 있으면 버림
+      out.replaceChildren();
+      const head = h("div", { class: "row result-head" }, h("p", { class: "grow", text: `${res.understood} 결과` }), App.speakButton(res.speech, "결과 읽어주기"));
+      out.append(head);
+      if (speak) App.voice.speak(res.speech);
+      const section = (title, icon, sec, key) => {
+        if (!sec || !sec.items || !sec.items.length) return;
+        const box = h("section", {}, h("h2", {}, App.icon(icon), ` ${title} (${sec.total}${sec.more_than ? "개 이상" : "개"})`));
+        if (sec.notice) box.append(h("p", { class: "badge st-warn", text: "ℹ " + sec.notice }));
+        out.append(box);
+        App.renderResults(sec, box, async (page) => {
+          const more = await App.api("/api/search?" + App.qs({ ...params, page, mode: key === "content" ? "content" : params.mode }));
+          App.renderResults(more[key], box, null);
+        });
+      };
+      section("파일", "file-folder", res.files, "files");
+      section("문서 내용", "page-facing-up", res.content, "content");
+      if (res.scenes) {
+        const box = h("section", {}, h("h2", {}, App.icon("movie-camera"), " 장면"));
+        if (res.scenes.notice) box.append(h("p", { class: "badge st-warn", text: "ℹ " + res.scenes.notice }));
+        box.append(h("div", { class: "grid" }, (res.scenes.items || []).map((x) => App.renderScene(x))));
+        out.append(box);
+      }
+      if (res.records && res.records.length) out.append(h("section", {}, h("h2", {}, App.icon("notebook"), " 기록"),
+        h("div", { class: "list" }, res.records.map(App.renderRecord))));
+      if (res.contacts && res.contacts.length) out.append(h("section", {}, h("h2", {}, App.icon("telephone-receiver"), " 연락처"),
+        h("div", { class: "list" }, res.contacts.map((c) => h("a", { class: "item", href: `#/contact/${c.id}` }, App.icon("busts-in-silhouette"), h("span", { class: "i-main" }, h("span", { class: "i-name", text: c.name }), h("span", { class: "i-sub", text: (JSON.parse(c.phones || "[]")[0] || "") + (c.relation ? " · " + c.relation : "") })))))));
+      if (!out.querySelector("section")) out.append(App.empty("warning", "찾는 자료가 없어요. 다른 말로 찾아보세요."));
+      else head.prepend(h("img", { class: "ico celebrate", src: "assets/mascot/found.svg", alt: "찾았어요", width: 48, height: 48 }), App.check());
     };
-    section("파일", "file-folder", res.files, "files");
-    section("문서 내용", "page-facing-up", res.content, "content");
-    if (res.scenes) {
-      const box = h("section", {}, h("h2", {}, App.icon("movie-camera"), " 장면"));
-      if (res.scenes.notice) box.append(h("p", { class: "badge st-warn", text: "ℹ " + res.scenes.notice }));
-      box.append(h("div", { class: "grid" }, (res.scenes.items || []).map((s) => App.renderScene(s))));
-      out.append(box);
-    }
-    if (res.records && res.records.length) out.append(h("section", {}, h("h2", {}, App.icon("notebook"), " 기록"),
-      h("div", { class: "list" }, res.records.map(App.renderRecord))));
-    if (res.contacts && res.contacts.length) out.append(h("section", {}, h("h2", {}, App.icon("telephone-receiver"), " 연락처"),
-      h("div", { class: "list" }, res.contacts.map((c) => h("a", { class: "item", href: `#/contact/${c.id}` }, App.icon("busts-in-silhouette"), h("span", { class: "i-main" }, h("span", { class: "i-name", text: c.name }), h("span", { class: "i-sub", text: (JSON.parse(c.phones || "[]")[0] || "") + (c.relation ? " · " + c.relation : "") })))))));
-    if (!out.querySelector("section")) out.append(App.empty("warning", "찾는 자료가 없어요. 다른 말로 찾아보세요."));
-    else head.prepend(App.check());
+    // 치는 대로 바로 찾기(색인만 조회하므로 빠름)
+    let timer = null;
+    input.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        st.q = input.value;
+        history.replaceState(null, "", "#/search?" + App.qs(st));
+        show(input.value, false).catch((e) => App.toast(e.message, "warn"));
+      }, 250);
+    });
+    App.cleanup = () => clearTimeout(timer);
+    out.append(App.empty("searching", "찾는 중이에요…"));
+    await show(st.q, !!query.voice);
   }, { title: "찾기" });
 
   App.renderRecord = (r) => h("a", { class: "item", href: `#/record/${r.id}` },

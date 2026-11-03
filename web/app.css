@@ -236,3 +236,5 @@ label.field input, label.field select { width: 100%; }
 input[type="time"], input[type="number"], select { min-width: 0; }
 @media (max-width: 480px) { .row > label.field { flex-basis: 100%; } .row > select { width: 100%; } }
 .today .btn-accent { background: var(--c-card-btn); color: var(--c-on-card-btn); }
+.item { flex-wrap: wrap; }
+.item .i-main { flex: 1 1 150px; }

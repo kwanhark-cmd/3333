@@ -616,7 +616,7 @@ async def reset(request: Request):
     c = e.conn()
     for t in ("files", "names_fts", "content_fts", "unreadable", "scan_dirs", "notes", "faces", "persons", "scenes",
               "scenes_fts", "scene_collections", "scene_collection_items", "voice_segments", "records", "records_fts",
-              "contacts", "record_people", "projects", "project_people"):
+              "contacts", "record_people", "projects", "project_people", "project_records"):
         c.execute(f"DELETE FROM {t}")
     c.execute("UPDATE roots SET generation=0, scanning_generation=0, status='idle', files_count=0")
     c.commit()
