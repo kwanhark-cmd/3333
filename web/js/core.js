@@ -2,6 +2,7 @@
 (function () {
   "use strict";
   const App = (window.App = {});
+  App.version = "1.1.0"; // 엔진 VERSION과 같아야 함(시험으로 확인)
   App.routes = [];
   App.settings = {};
   App.user = localStorage.getItem("hd_user") || "default";
@@ -290,5 +291,17 @@
       if (!roots.length) { App.go("#/wizard"); return; }
     }
     App.render();
+    // 보기 앱(휴대폰·맥)과 PC 엔진 버전이 다르면 안내
+    try {
+      const hl = await App.api("/api/health");
+      if (hl.version && hl.version !== App.version) App.toast(`보기 화면(${App.version})과 PC 엔진(${hl.version}) 버전이 달라요. 설정 > 업데이트 확인을 눌러 주세요.`, "warn", 10000);
+    } catch (e) { /* 무시 */ }
   };
+
+  /** 오류 안내 상자(다시 시도 + 문제 신고) — 지금 화면에 살아 있는 요소만 사용 */
+  App.errorBox = function (err, retry) {
+    return h("div", { class: "card stack", role: "alert" }, h("p", { class: "badge st-danger", text: "✖ " + ((err && err.message) || "문제가 생겼어요.") }),
+      h("div", { class: "row" }, retry ? App.btn("다시 시도", retry, "btn-primary") : null, App.reportLink()));
+  };
+  App.reportLink = () => h("a", { class: "btn btn-ghost", href: App.url("/api/report"), download: "hdbiseo_report.zip" }, App.icon("light-bulb"), "문제 신고");
 })();

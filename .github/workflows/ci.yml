@@ -3,6 +3,7 @@ name: 검사와 빌드
 on:
   push:
     branches: ["main", "claude/**"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -132,3 +133,37 @@ jobs:
         with:
           name: HDBiseo-Android
           path: desktop/android/app/build/outputs/apk/debug/*.apk
+
+  release:
+    name: 새 버전 올리기(Releases)
+    if: startsWith(github.ref, 'refs/tags/v') && always() && needs.windows-installer.result == 'success'
+    needs: [windows-installer, desktop-mac, android, ui-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: 버전 확인(태그 = 프로그램 버전)
+        run: |
+          V=$(python3 -c "import re;print(re.search(r'VERSION = \"(.+?)\"', open('engine/hdbiseo/__init__.py').read()).group(1))")
+          test "v$V" = "${GITHUB_REF_NAME}" || (echo "태그(${GITHUB_REF_NAME})와 버전(v$V)이 달라요" && exit 1)
+          echo "V=$V" >> $GITHUB_ENV
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: 파일 이름 정리
+        run: |
+          mkdir -p out
+          cp art/HDBiseo-Windows-Setup/*.exe out/
+          for f in art/HDBiseo-Mac/*.dmg; do [ -f "$f" ] && cp "$f" "out/HDBiseo-$V-mac.dmg"; done
+          for f in art/HDBiseo-Android/*.apk; do [ -f "$f" ] && cp "$f" "out/HDBiseo-$V-android.apk"; done
+          ls -la out
+      - name: 변경 내역(한국어) 꺼내기
+        run: |
+          awk -v v="## $V" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md > notes.md
+          printf "\n\n**설치 방법**: 윈도우는 HDBiseo-Setup 파일을 받아 실행(덮어쓰기 설치, 색인·설정은 그대로). 프로그램 안 설정 > 업데이트 확인으로도 설치돼요.\n" >> notes.md
+          cat notes.md
+      - name: Releases에 올리기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" out/* --title "하드 자료 찾기 비서 $V" --notes-file notes.md

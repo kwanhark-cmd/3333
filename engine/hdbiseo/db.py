@@ -12,7 +12,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -155,6 +155,11 @@ ANALYZE;
 """,
     5: """
 CREATE TABLE IF NOT EXISTS project_records(project_id INTEGER, record_id INTEGER, PRIMARY KEY(project_id, record_id));
+""",
+    6: """
+CREATE INDEX IF NOT EXISTS ix_faces_person_conf ON faces(person_id, confirmed);
+CREATE INDEX IF NOT EXISTS ix_record_people_contact ON record_people(contact_id, status);
+CREATE INDEX IF NOT EXISTS ix_records_kind_at ON records(kind, at);
 """,
 }
 

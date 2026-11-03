@@ -42,18 +42,30 @@ DEFAULT_SETTINGS: dict = {
 }
 
 
-def app_home() -> Path:
-    """앱 데이터 폴더. 환경변수 HDBISEO_HOME 으로 바꿀 수 있다(테스트용)."""
+def default_home() -> Path:
+    """기본 자료 폴더(프로그램 폴더가 아닌 사용자 데이터 폴더). 업데이트로 바뀌지 않는다."""
     env = os.environ.get("HDBISEO_HOME")
     if env:
-        base = Path(env)
-    elif sys.platform.startswith("win"):
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "HDBiseo"
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support" / "HDBiseo"
-    else:
-        base = Path.home() / ".hdbiseo"
+        return Path(env)
+    if sys.platform.startswith("win"):
+        return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "HDBiseo"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "HDBiseo"
+    return Path.home() / ".hdbiseo"
+
+
+def app_home() -> Path:
+    """앱 자료 폴더(설정·색인·썸네일·얼굴 이름·메모). 사용자가 다른 위치로 옮겼으면 그곳."""
+    base = default_home()
     base.mkdir(parents=True, exist_ok=True)
+    pointer = base / "location.json"
+    if pointer.exists():
+        try:
+            target = Path(json.loads(pointer.read_text(encoding="utf-8"))["home"])
+            if target.is_dir():
+                return target
+        except (OSError, ValueError, KeyError):
+            pass
     return base
 
 

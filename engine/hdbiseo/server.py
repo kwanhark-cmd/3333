@@ -38,9 +38,10 @@ def web_dir() -> Path:
 class UserError(Exception):
     """사용자에게 그대로 보여줄 쉬운 한국어 오류."""
 
-    def __init__(self, msg: str, code: int = 400):
+    def __init__(self, msg: str, code: int = 400, stage: str = "요청"):
         super().__init__(msg)
         self.code = code
+        self.stage = stage
 
 
 app = FastAPI(title=APP_NAME, version=VERSION, docs_url=None, redoc_url=None)
@@ -81,8 +82,10 @@ async def guard(request: Request, call_next):
 
 
 @app.exception_handler(UserError)
-async def _user_error(_req, exc: UserError):
-    return JSONResponse({"error": str(exc)}, status_code=exc.code)
+async def _user_error(req, exc: UserError):
+    # 사용자에게 실패 창을 보여주는 모든 경우를 단계와 함께 기록(내용·연락처·열쇠는 기록 안 함)
+    log.error("[%s] %s %s → %s", exc.stage, req.method, req.url.path, str(exc))
+    return JSONResponse({"error": str(exc), "stage": exc.stage}, status_code=exc.code)
 
 
 @app.exception_handler(HTTPException)
@@ -180,7 +183,9 @@ def system(request: Request):
             used += shutil.disk_usage(os_path(r["path"])).used
         except OSError:
             pass
-    return {"spec": spec, "estimate": sysinfo.estimate(used, spec), "version": VERSION,
+    from . import datahome
+
+    return {"spec": spec, "estimate": sysinfo.estimate(used, spec), "version": VERSION, "data": datahome.info(),
             "recognition": e.recognizer.status(), "ffmpeg": bool(media.ffmpeg_path("ffmpeg"))}
 
 
@@ -212,7 +217,11 @@ async def add_user(request: Request):
 
 @app.get("/api/settings")
 def get_settings(request: Request):
-    return st.public_view(eng(request).settings())
+    e = eng(request)
+    s = e.settings()
+    if not s.get("first_run_done") and e.roots():
+        s = st.save(e.user_id, {"first_run_done": True})  # 이미 설정이 있으면 첫 실행 마법사 건너뛰기
+    return st.public_view(s)
 
 
 @app.post("/api/settings")
@@ -663,10 +672,29 @@ def mount_web() -> None:
         app.mount("/", StaticFiles(directory=str(wd), html=True), name="web")
 
 
+_extras_done = False
+
+
 def register_extras() -> None:
-    from . import routes_more  # 3·5단계 기능
+    global _extras_done
+    if _extras_done:
+        return
+    _extras_done = True
+    from . import routes_more, routes_update  # 3·5단계 기능, 업데이트
 
     routes_more.register(app)
+    routes_update.register(app)
+
+
+def _already_running(port: int) -> bool:
+    import json
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1.5) as r:  # 이 PC 안의 엔진 확인
+            return json.loads(r.read()).get("app") == APP_NAME
+    except Exception:
+        return False
 
 
 def run(host: str | None = None, port: int | None = None, open_browser: bool = True) -> None:
@@ -675,11 +703,16 @@ def run(host: str | None = None, port: int | None = None, open_browser: bool = T
 
     import uvicorn
 
-    from . import discovery
+    from . import datahome, discovery
 
     applog.setup()
+    datahome.migrate_legacy()
     cfg = st.app_config()
     port = port or int(os.environ.get("HDBISEO_PORT") or cfg.get("port", 47810))
+    if _already_running(port):  # 이미 켜져 있으면 화면만 열고 끝냄(두 번 실행 방지)
+        if open_browser:
+            webbrowser.open(f"http://127.0.0.1:{port}/")
+        return
     host = host or ("0.0.0.0" if cfg.get("lan_enabled") else "127.0.0.1")
     register_extras()
     mount_web()

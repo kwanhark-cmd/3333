@@ -22,7 +22,8 @@ class GoogleError(Exception):
     pass
 
 
-def _post(url: str, data: dict, opener=urllib.request.urlopen) -> dict:
+def _post(url: str, data: dict, opener=None) -> dict:
+    opener = opener or urllib.request.urlopen
     req = urllib.request.Request(url, data=urllib.parse.urlencode(data).encode(), method="POST")
     try:
         with opener(req, timeout=30) as r:
@@ -31,7 +32,8 @@ def _post(url: str, data: dict, opener=urllib.request.urlopen) -> dict:
         raise GoogleError("구글에 연결하지 못했어요. 인터넷과 연결 정보를 확인해 주세요.") from e
 
 
-def _get(url: str, token: str, opener=urllib.request.urlopen) -> dict:
+def _get(url: str, token: str, opener=None) -> dict:
+    opener = opener or urllib.request.urlopen
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     try:
         with opener(req, timeout=60) as r:
@@ -48,14 +50,16 @@ def auth_url(client_id: str, redirect_uri: str, state: str) -> str:
         "access_type": "offline", "prompt": "consent", "state": state})
 
 
-def exchange(settings: dict, code: str, redirect_uri: str, opener=urllib.request.urlopen) -> dict:
+def exchange(settings: dict, code: str, redirect_uri: str, opener=None) -> dict:
+    opener = opener or urllib.request.urlopen
     tok = _post(TOKEN_URL, {"code": code, "client_id": settings["google_client_id"], "client_secret": settings["google_client_secret"],
                             "redirect_uri": redirect_uri, "grant_type": "authorization_code"}, opener)
     tok["expires_at"] = time.time() + int(tok.get("expires_in", 3600)) - 60
     return tok
 
 
-def access_token(settings: dict, save, opener=urllib.request.urlopen) -> str:
+def access_token(settings: dict, save, opener=None) -> str:
+    opener = opener or urllib.request.urlopen
     tok = settings.get("google_token")
     if not tok:
         raise GoogleError("구글이 아직 연결되지 않았어요.")
@@ -80,7 +84,8 @@ def _gdt(v: dict | None) -> str | None:
     return (v.get("date") or "") + "T00:00:00" if v.get("date") else None
 
 
-def sync(conn, settings: dict, save, opener=urllib.request.urlopen) -> dict:
+def sync(conn, settings: dict, save, opener=None) -> dict:
+    opener = opener or urllib.request.urlopen
     token = access_token(settings, save, opener)
     events = contacts = 0
     page = None

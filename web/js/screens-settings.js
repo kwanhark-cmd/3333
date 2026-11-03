@@ -9,9 +9,52 @@
       h("button", { class: "chip", type: "button", "aria-pressed": String(App.settings[key] === v), onclick: async () => { await App.saveSettings({ [key]: v }); App.render(); } }, l))));
   const toggle = (label, key, desc) => choice(label + (desc ? ` — ${desc}` : ""), key, [[true, "켜기"], [false, "끄기"]]);
 
+  /** 업데이트 확인 카드(설정 맨 위) */
+  App.updateCard = function (sys) {
+    const out = h("div", { class: "stack" });
+    const plat = /Android/i.test(navigator.userAgent) ? "android" : /Mac/i.test(navigator.platform) ? "mac" : "windows";
+    const card = h("section", { class: "card stack", id: "update-card" }, h("h2", {}, App.icon("sparkles"), " 업데이트"),
+      h("p", { text: `지금 버전 ${App.version}${sys && sys.version !== App.version ? ` (PC 엔진 ${sys.version})` : ""}. 새 버전을 설치해도 색인·설정·얼굴 이름·메모는 그대로예요.` }),
+      h("div", { class: "row" }, App.btn("업데이트 확인", async (e) => {
+        e.target.disabled = true;
+        try {
+          const r = await App.api("/api/update/check");
+          out.replaceChildren();
+          if (!r.newer) { out.append(h("p", { class: "badge st-ok", text: `✔ 최신 버전이에요 (${r.current})` })); return; }
+          out.append(h("p", { class: "badge st-warn", text: `새 버전 ${r.latest}이(가) 나왔어요!` }), h("div", { class: "doc-preview", text: r.notes || "" }));
+          if (r.engine_busy) out.append(h("p", { class: "badge st-progress", text: "◔ 지금 분석(색인) 중이에요. 분석이 끝난 뒤 설치해 주세요." }));
+          if (r.can_auto_install) {
+            out.append(App.btn("지금 설치(자동 백업 후)", async (ev) => {
+              if (!(await App.confirm("새 버전 설치", "설정·인물 정보를 자동으로 백업한 뒤 설치해요. 설치하는 동안 잠시 프로그램이 꺼졌다 켜져요. 색인은 그대로예요.", "설치하기"))) return;
+              ev.target.disabled = true;
+              try { const x = await App.api("/api/update/install", { body: {} }); App.toast(x.message, "ok", 15000); } catch (err) { App.toast(err.message, "warn", 8000); ev.target.disabled = false; }
+            }, "btn-accent", "inbox-tray", { disabled: r.engine_busy }));
+          } else if (r.assets[plat]) {
+            out.append(h("a", { class: "btn btn-accent", href: r.assets[plat].url, target: "_blank", rel: "noopener" }, App.icon("inbox-tray"),
+              { android: "안드로이드 앱 내려받기(설치 화면이 열려요)", mac: "맥 앱 내려받기(새 앱으로 바꾸기)", windows: "윈도우 설치 파일 내려받기" }[plat]));
+          }
+          if (r.page) out.append(h("a", { href: r.page, target: "_blank", rel: "noopener", text: "바뀐 점 자세히 보기" }));
+        } catch (err) { out.replaceChildren(App.errorBox(err)); }
+        finally { e.target.disabled = false; }
+      }, "btn-primary", "magnifying-glass-tilted-left")), out);
+    return card;
+  };
+
   App.route("/settings", async (view) => {
     const s = App.settings;
     const sys = await App.api("/api/system").catch(() => null);
+    view.append(App.updateCard(sys));
+    if (sys && sys.data) {
+      view.append(h("section", { class: "card stack" }, h("h2", {}, App.icon("computer-disk"), " 자료 위치(색인·설정)"),
+        h("p", { text: "며칠 걸려 만든 색인이 여기 있어요. 프로그램을 새로 설치·업데이트해도 이 폴더는 그대로예요." }),
+        h("p", {}, h("strong", { text: sys.data.home })),
+        h("div", { class: "row" }, App.btn("다른 위치로 옮기기", async () => {
+          const p = await App.pickFolder("자료를 옮길 폴더 고르기");
+          if (!p) return;
+          if (!(await App.confirm("자료 옮기기", `'${p}' 폴더로 색인·설정을 복사한 뒤 그곳을 써요. 원래 위치의 자료는 지우지 않고 남겨 둬요.`, "옮기기"))) return;
+          try { const r = await App.api("/api/data-location", { body: { path: p } }); App.toast(r.message, "ok", 8000); App.render(); } catch (e) { App.toast(e.message, "warn", 8000); }
+        }, "btn-ghost", "file-folder"))));
+    }
     view.append(h("section", { class: "card stack" }, h("h2", {}, App.icon("gear"), " 보기 편하게"),
       choice("글씨 크기", "font_scale", [[0, "보통"], [1, "크게"], [2, "아주 크게"]]),
       choice("화면 색", "theme", [["light", "☀ 밝게"], ["dark", "🌙 어둡게"], ["contrast", "◐ 고대비"]]),

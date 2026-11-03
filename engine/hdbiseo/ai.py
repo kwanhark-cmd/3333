@@ -29,7 +29,8 @@ def month_usage(conn) -> float:
     return float(row[0]) if row else 0.0
 
 
-def summarize(conn, settings: dict, file_id: int, opener=urllib.request.urlopen) -> dict:
+def summarize(conn, settings: dict, file_id: int, opener=None) -> dict:
+    opener = opener or urllib.request.urlopen
     if not settings.get("ai_enabled"):
         raise AIError("AI 연결이 꺼져 있어요. 설정에서 켜야 사용할 수 있어요.")
     if not settings.get("ai_api_key"):

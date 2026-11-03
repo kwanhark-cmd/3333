@@ -23,11 +23,13 @@ ALLOW = {
     "trash.py": (1, "사용자가 확인 창에서 누른 '휴지통으로 이동'(운영체제 휴지통, 되살리기 가능)"),
     "samples.py": (99, "체험·시험용 예제 폴더를 새로 만드는 코드(사용자 하드디스크와 무관)"),
     "records.py": (1, "음성 일기 소리 파일을 앱 폴더에 저장"),
+    "datahome.py": (4, "자료 위치 옮기기: 새 위치로 복사(원래 자료는 그대로)·위치 기록 저장"),
+    "update.py": (2, "업데이트 설치 파일을 앱 폴더(updates)에 내려받아 저장"),
     "recognize.py": (2, "장면 모음 내보내기 폴더(앱 폴더 안 새 폴더)에 복사·목록 저장"),
 }
 
 NETWORK = re.compile(r"\b(urllib\.request|urlopen|http\.client|requests\.|httpx\.|socket\.create_connection)")
-NET_ALLOW = {"ai.py", "google.py"}
+NET_ALLOW = {"ai.py", "google.py", "update.py", "server.py"}  # server.py: 이 PC(127.0.0.1)에 엔진이 이미 켜져 있는지 확인만
 
 
 def test_no_writes_to_originals():
@@ -59,3 +61,15 @@ def test_open_for_read_only_in_indexing():
         for m in re.finditer(r"open\(([^)]*)\)", text):
             args = m.group(1)
             assert not re.search(r"['\"][wax+]", args), f"{name}: {m.group(0)}"
+
+
+def test_server_network_only_local():
+    text = (SRC / "server.py").read_text(encoding="utf-8")
+    calls = [line for line in text.splitlines() if "urlopen(" in line]
+    assert calls and all("127.0.0.1" in line for line in calls)
+
+
+def test_update_sends_nothing():
+    """업데이트 확인은 GitHub에 '최신 버전 정보'만 묻는다(자료를 보내지 않음: data= 없는 GET)."""
+    text = (SRC / "update.py").read_text(encoding="utf-8")
+    assert "data=" not in text and "method=\"POST\"" not in text
