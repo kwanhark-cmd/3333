@@ -659,7 +659,7 @@ def run(host: str | None = None, port: int | None = None, open_browser: bool = T
 
     applog.setup()
     cfg = st.app_config()
-    port = port or int(cfg.get("port", 47810))
+    port = port or int(os.environ.get("HDBISEO_PORT") or cfg.get("port", 47810))
     host = host or ("0.0.0.0" if cfg.get("lan_enabled") else "127.0.0.1")
     register_extras()
     mount_web()

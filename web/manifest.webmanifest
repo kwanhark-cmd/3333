@@ -1,0 +1,10 @@
+{
+  "name": "컴퓨터 하드 자료 검색 정리 비서",
+  "short_name": "하드 비서",
+  "lang": "ko",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f3f5fa",
+  "theme_color": "#1d4ed8",
+  "icons": [{ "src": "assets/mascot/hello.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
