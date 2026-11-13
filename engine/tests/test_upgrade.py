@@ -136,3 +136,4 @@ def test_versions_match():
     assert f'#define MyAppVersion "{VERSION}"' in (root / "installer.iss").read_text(encoding="utf-8")
     assert json.loads((root / "desktop/package.json").read_text(encoding="utf-8"))["version"] == VERSION
     assert f"## {VERSION}" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert f'version = "{VERSION}"' in (root / "engine/pyproject.toml").read_text(encoding="utf-8")

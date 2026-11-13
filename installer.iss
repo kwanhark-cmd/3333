@@ -1,6 +1,6 @@
 ; 윈도우 설치 프로그램(Inno Setup). GitHub Actions에서 자동으로 만든다.
 #define MyAppName "하드 자료 찾기 비서"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 [Setup]
 AppId={{6C1E2F7A-3B5D-4C55-9E21-HDBISEO00001}
 AppName={#MyAppName}

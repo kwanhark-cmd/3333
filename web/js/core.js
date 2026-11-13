@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const App = (window.App = {});
-  App.version = "1.1.0"; // 엔진 VERSION과 같아야 함(시험으로 확인)
+  App.version = "1.1.1"; // 엔진 VERSION과 같아야 함(시험으로 확인)
   App.routes = [];
   App._cleanups = [];
   App.onCleanup = (fn) => App._cleanups.push(fn); // 화면을 떠날 때 할 일(여러 개 가능)

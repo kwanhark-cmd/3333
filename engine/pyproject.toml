@@ -1,6 +1,6 @@
 [project]
 name = "hdbiseo"
-version = "1.0.0"
+version = "1.1.1"
 description = "컴퓨터 하드 자료 검색 정리 비서 - 분석 엔진"
 requires-python = ">=3.11"
 
