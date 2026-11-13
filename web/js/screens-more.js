@@ -146,7 +146,7 @@
       App.btn("내보내기 폴더로 저장", async () => { const r = await App.api(`/api/scene-collections/${id}/export`, { body: {} }); App.toast(r.message, "ok", 8000); }, "btn-ghost", "inbox-tray")));
     if (!d.items.length) { view.append(App.empty("hello", "아직 담은 장면이 없어요. 장면 찾기에서 '모음에 담기'를 눌러 보세요.")); return; }
     view.append(h("div", { class: "grid stagger" }, d.items.map((s) => h("div", { class: "stack", style: { gap: "4px" } }, App.renderScene(s),
-      App.btn("빼기", async () => { await App.api(`/api/scene-collections/${id}/items`, { body: { scene_id: s.id, remove: true } }); App.render(); }, "btn-ghost btn-small")))));
+      App.btn("빼기", async () => { await App.api(`/api/scene-collections/${id}/items`, { body: { scene_id: s.id, remove: true } }); App.render(); }, "btn-danger-line btn-small")))));
   }, { title: "장면 모음" });
 
   // ================= 기록 =================

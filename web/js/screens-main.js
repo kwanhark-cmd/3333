@@ -134,7 +134,7 @@
             const ex = await App.pickFolder("분석에서 뺄 폴더 고르기");
             if (ex) { await App.api(`/api/roots/${r.id}`, { method: "PATCH", body: { excluded: [...r.excluded, ex] } }); refresh(); }
           }, "btn-ghost btn-small"),
-          App.btn("빼기", async () => { await App.api(`/api/roots/${r.id}`, { method: "DELETE" }); refresh(); }, "btn-ghost btn-small"))) :
+          App.btn("빼기", async () => { await App.api(`/api/roots/${r.id}`, { method: "DELETE" }); refresh(); }, "btn-danger-line btn-small"))) :
           [h("p", { class: "muted", text: "아직 고른 하드디스크가 없어요." })]));
         nextBtn.disabled = !roots.length;
       };
@@ -338,7 +338,7 @@
 
     const notes = h("div", { class: "list" }, (f.notes || []).map((n) => h("div", { class: "item" }, App.icon(n.source === "voice" ? "studio-microphone" : "memo"),
       h("span", { class: "i-main" }, h("span", { class: "i-name", text: n.text }), h("span", { class: "i-sub", text: App.date(n.created_at) })),
-      App.btn("지우기", async () => { await App.api(`/api/notes/${n.id}`, { method: "DELETE" }); App.render(); }, "btn-ghost btn-small"))));
+      App.btn("지우기", async () => { await App.api(`/api/notes/${n.id}`, { method: "DELETE" }); App.render(); }, "btn-danger-line btn-small"))));
     const noteInput = h("input", { type: "text", placeholder: "떠오른 기억을 적어 주세요", "aria-label": "메모" });
     const save = async (text, voice) => { if (!text) return; await App.api(`/api/files/${f.id}/notes`, { body: { text, voice } }); App.toast("메모를 붙였어요.", "ok"); App.render(); };
     view.append(h("h2", { text: "기억 메모" }), notes, h("div", { class: "searchbar" }, noteInput, App.btn("메모 붙이기", () => save(noteInput.value, false), "btn-primary"), App.micButton((t) => save(t, true), "말로 메모")));
@@ -395,7 +395,7 @@
               App.btn("목록에서 빼기", async () => {
                 if (!(await App.confirm("목록에서 빼기", "이 하드디스크의 색인만 지워요. 하드디스크 안의 파일은 그대로예요.", "빼기", "btn-danger"))) return;
                 await App.api(`/api/roots/${r.id}`, { method: "DELETE" }); draw();
-              }, "btn-ghost btn-small")));
+              }, "btn-danger-line btn-small")));
         })),
         h("div", { class: "row" },
           App.btn("하드디스크·폴더 추가", async () => { const p = await App.pickFolder(); if (!p) return; try { await App.api("/api/roots", { body: { path: p } }); draw(); } catch (e) { App.toast(e.message, "warn"); } }, "btn-primary", "computer-disk"),

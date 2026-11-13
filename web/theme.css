@@ -12,7 +12,7 @@
   --font: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
   --fs-base: 18px;          /* 글씨 크기 1단계(보통) */
   /* 글자 위계 4단계: 크게 보여줄 것(display) > 제목(title) > 본문(body) > 보조(small) */
-  --fs-small: 0.85rem;
+  --fs-small: 0.9rem;       /* 보조 글자도 16px 이상(1.1.2) */
   --fs-body: 1rem;
   --fs-title: 1.35rem;
   --fs-hero: 1.9rem;
@@ -20,6 +20,12 @@
 
   /* 크기·간격·둥글기 */
   --btn-h: 56px;            /* 버튼 최소 높이 */
+  --btn-h-small: 52px;      /* 작은 버튼·머리줄 버튼도 52px 이상(1.1.2) */
+  --fs-btn: max(17px, 1rem);              /* 버튼 글자 17px 이상, 굵게 */
+  --fs-btn-small: max(17px, var(--fs-small));
+  --btn-line: 2px;          /* 테두리 버튼(보조)의 테두리 두께 */
+  --press-ring: 3px;        /* 누르는 동안 버튼 안쪽 테두리 */
+  --focus-w: 4px;           /* 키보드 초점 테두리 */
   --touch: 48px;            /* 터치 영역 최소 */
   --radius: 16px;
   --radius-sm: 12px;
@@ -49,23 +55,26 @@
   --c-surface: #ffffff;
   --c-surface-2: #e8edf6;
   --c-text: #0f172a;
-  --c-muted: #475569;
+  --c-muted: #334155;            /* 보조 글자도 진하게(바탕 대비 7:1 이상) */
   --c-border: #cbd5e1;
-  --c-primary: #1d4ed8;          /* 주요색 */
+  --c-line: #475569;             /* 테두리 버튼·입력칸 테두리(잘 보이게) */
+  --c-primary: #1e40af;          /* 주요색(흰 글자 대비 7:1 이상) */
   --c-on-primary: #ffffff;
-  --c-accent: #c2410c;           /* 강조색(주요 동작 버튼) */
+  --c-accent: #9a3412;           /* 강조색(주요 동작 버튼) */
   --c-on-accent: #ffffff;
-  --c-ok: #15803d;               /* 초록 = 완료·연결됨 */
+  --c-ok: #166534;               /* 초록 = 완료·연결됨 */
   --c-on-ok: #ffffff;
-  --c-progress: #0369a1;         /* 파랑 = 진행 중 */
+  --c-progress: #075985;         /* 파랑 = 진행 중 */
   --c-on-progress: #ffffff;
   --c-warn: #facc15;             /* 노랑 = 확인 필요 */
   --c-on-warn: #3b2300;
-  --c-danger: #b91c1c;           /* 빨강 = 문제·주의, 위험 동작 */
+  --c-danger: #991b1b;           /* 빨강 = 문제·주의, 위험 동작 */
   --c-on-danger: #ffffff;
+  --c-danger-text: #991b1b;      /* 빨간 테두리 버튼의 글자(바탕 대비 7:1 이상) */
+  --c-danger-line: var(--c-danger);
   --c-neutral: #475569;          /* 보조 버튼 */
   --c-on-neutral: #ffffff;
-  --c-focus: #f59e0b;
+  --c-focus: #b45309;            /* 초점 테두리(바탕과 대비 3:1 이상) */
   --c-highlight: #fde68a;
   --c-on-highlight: #1f1300;
   --c-overlay: rgba(15, 23, 42, .55);
@@ -101,6 +110,8 @@
   --c-text: #f1f5f9;
   --c-muted: #cbd5e1;
   --c-border: #33435f;
+  --c-line: #94a3b8;
+  --c-focus: #fbbf24;
   --c-primary: #93c5fd;
   --c-on-primary: #0b1220;
   --c-accent: #fb923c;
@@ -108,11 +119,13 @@
   --c-ok: #4ade80;
   --c-on-ok: #052e16;
   --c-progress: #38bdf8;
-  --c-on-progress: #082f49;
+  --c-on-progress: #021520;
   --c-warn: #fde047;
   --c-on-warn: #3b2300;
   --c-danger: #f87171;
-  --c-on-danger: #1f0303;
+  --c-on-danger: #140000;
+  --c-danger-text: #fca5a5;
+  --c-danger-line: #f87171;
   --c-neutral: #94a3b8;
   --c-on-neutral: #0b1220;
   --c-highlight: #854d0e;
@@ -138,6 +151,7 @@
   --c-text: #ffffff;
   --c-muted: #ffffff;
   --c-border: #ffffff;
+  --c-line: #ffffff;
   --c-primary: #ffff00;
   --c-on-primary: #000000;
   --c-accent: #ffff00;
@@ -150,6 +164,7 @@
   --c-on-warn: #000000;
   --c-danger: #ff6b6b;
   --c-on-danger: #000000;
+  --c-danger-text: #ff6b6b;
   --c-neutral: #ffffff;
   --c-on-neutral: #000000;
   --c-focus: #00e5ff;
@@ -180,10 +195,10 @@
 }
 
 /* ---- 색 테마(설정 > 앱 꾸미기). 고대비 모드에서는 쓰지 않는다 ---- */
-:root[data-palette="green"]:not([data-theme="contrast"]) { --c-primary: #15803d; }
-:root[data-palette="purple"]:not([data-theme="contrast"]) { --c-primary: #7e22ce; }
-:root[data-palette="orange"]:not([data-theme="contrast"]) { --c-primary: #c2410c; --c-accent: #1d4ed8; }
-:root[data-palette="pink"]:not([data-theme="contrast"]) { --c-primary: #be185d; }
+:root[data-palette="green"]:not([data-theme="contrast"]) { --c-primary: #166534; }
+:root[data-palette="purple"]:not([data-theme="contrast"]) { --c-primary: #6b21a8; }
+:root[data-palette="orange"]:not([data-theme="contrast"]) { --c-primary: #9a3412; --c-accent: #1e40af; }
+:root[data-palette="pink"]:not([data-theme="contrast"]) { --c-primary: #9d174d; }
 :root[data-theme="dark"][data-palette="green"] { --c-primary: #4ade80; }
 :root[data-theme="dark"][data-palette="purple"] { --c-primary: #d8b4fe; }
 :root[data-theme="dark"][data-palette="orange"] { --c-primary: #fdba74; --c-accent: #93c5fd; --c-on-accent: #0b1220; }

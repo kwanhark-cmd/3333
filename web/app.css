@@ -8,7 +8,7 @@ body {
 }
 img { max-width: 100%; }
 a { color: var(--c-primary); }
-:focus-visible { outline: 4px solid var(--c-focus); outline-offset: 3px; }
+:focus-visible { outline: var(--focus-w) solid var(--c-focus); outline-offset: 3px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
 
@@ -28,14 +28,15 @@ main { max-width: var(--page-max); margin: 0 auto; padding: var(--gap) var(--gap
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--gap-s);
   min-height: var(--btn-h); min-width: var(--touch); padding: 0 calc(var(--gap) * 1.2);
-  border: var(--border-w) solid transparent; border-radius: var(--radius); cursor: pointer;
-  font: inherit; font-weight: 700; text-decoration: none; text-align: center; line-height: 1.2;
+  border: var(--btn-line) solid transparent; border-radius: var(--radius); cursor: pointer;
+  font: inherit; font-size: var(--fs-btn); font-weight: 700; text-decoration: none; text-align: center; line-height: 1.2;
   background: var(--c-neutral); color: var(--c-on-neutral);
   box-shadow: var(--shadow-3d), var(--bevel);
   transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), filter var(--dur-fast);
 }
-.btn:hover { filter: brightness(1.06); }
-.btn:active, .btn.pressed { transform: translateY(4px); box-shadow: var(--shadow-3d-press), var(--bevel); }
+/* 마우스를 올리거나 누를 때 색은 그대로(글자 대비 유지), 모양으로 알려준다 */
+.btn:hover { transform: translateY(-1px); }
+.btn:active, .btn.pressed { transform: translateY(4px); box-shadow: var(--shadow-3d-press), inset 0 0 0 var(--press-ring) currentColor; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 .btn img.ico { width: var(--icon-btn); height: var(--icon-btn); flex: none; }
 .btn-primary { background: var(--c-primary); color: var(--c-on-primary); }
@@ -43,10 +44,11 @@ main { max-width: var(--page-max); margin: 0 auto; padding: var(--gap) var(--gap
 .btn-ok { background: var(--c-ok); color: var(--c-on-ok); }
 .btn-danger { background: var(--c-danger); color: var(--c-on-danger); }
 .btn-warn { background: var(--c-warn); color: var(--c-on-warn); }
-.btn-ghost { background: var(--c-surface-2); color: var(--c-text); border-color: var(--c-border); box-shadow: var(--shadow-flat); }
-.btn-small { min-height: var(--touch); padding: 0 var(--gap); font-size: var(--fs-small); }
+.btn-ghost { background: var(--c-surface-2); color: var(--c-text); border: var(--btn-line) solid var(--c-line); box-shadow: var(--shadow-flat); }
+.btn-danger-line { background: var(--c-surface); color: var(--c-danger-text); border: var(--btn-line) solid var(--c-danger-line); box-shadow: var(--shadow-flat); } /* 빼기·지우기(테두리 빨강) */
+.btn-small { min-height: var(--btn-h-small); padding: 0 var(--gap); font-size: var(--fs-btn-small); }
 .btn-block { width: 100%; }
-.navbtn { min-height: var(--touch); min-width: var(--touch); padding: 0 var(--gap-s); font-size: var(--fs-small); }
+.navbtn { min-height: var(--btn-h-small); min-width: var(--touch); padding: 0 var(--gap-s); font-size: var(--fs-btn-small); }
 .row { display: flex; flex-wrap: wrap; gap: var(--gap-s); align-items: center; }
 .row > .grow { flex: 1 1 200px; min-width: 0; }
 .stack { display: grid; gap: var(--gap); }
@@ -90,15 +92,15 @@ h3 { font-size: 1.1rem; margin: var(--gap) 0 var(--gap-xs); }
 .searchbar input { flex: 1 1 220px; min-width: 0; }
 input, select, textarea {
   font: inherit; color: var(--c-text); background: var(--c-surface); min-height: var(--btn-h);
-  border: 2px solid var(--c-border); border-radius: var(--radius); padding: 0 var(--gap); max-width: 100%;
+  border: 2px solid var(--c-line); border-radius: var(--radius); padding: 0 var(--gap); max-width: 100%;
 }
 textarea { padding: var(--gap); min-height: 140px; width: 100%; }
-input:focus, select:focus, textarea:focus { border-color: var(--c-primary); outline: none; }
+input:focus, select:focus, textarea:focus { border-color: var(--c-primary); outline: var(--focus-w) solid var(--c-focus); outline-offset: 2px; }
 label.field { display: grid; gap: var(--gap-xs); font-weight: 700; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--gap-xs); margin: var(--gap-s) 0; }
 .chip {
   min-height: var(--touch); padding: 0 var(--gap); border-radius: var(--radius-pill); cursor: pointer; font: inherit;
-  background: var(--c-surface-2); color: var(--c-text); border: 2px solid var(--c-border);
+  background: var(--c-surface-2); color: var(--c-text); border: var(--btn-line) solid var(--c-line); font-weight: 700;
 }
 .chip[aria-pressed="true"] { background: var(--c-primary); color: var(--c-on-primary); border-color: var(--c-primary); }
 .mic { background: var(--c-accent); color: var(--c-on-accent); }
@@ -172,6 +174,7 @@ mark { background: var(--c-highlight); color: var(--c-on-highlight); border-radi
 }
 .tip img { width: 52px; height: 52px; flex: none; }
 .tip .grow { flex: 1; min-width: 0; }
+.tip .btn-ghost { background: var(--c-warn); color: var(--c-on-warn); border-color: var(--c-on-warn); } /* 노란 말풍선 위에서도 테두리가 보이게 */
 
 /* ---- 알림·확인 창 ---- */
 .toast-wrap { position: fixed; left: 0; right: 0; bottom: var(--gap); display: grid; justify-items: center; gap: var(--gap-s); z-index: 60; pointer-events: none; padding: 0 var(--gap); }
@@ -214,7 +217,7 @@ dl.info dd { margin: 0; min-width: 0; }
 
 /* ---- 인맥 지도 ---- */
 .netmap { width: 100%; height: 60vh; min-height: 320px; background: var(--c-surface); border-radius: var(--radius); border: var(--border-w) solid var(--c-border); touch-action: none; }
-.netmap text { fill: var(--c-text); font-size: 14px; font-family: var(--font); }
+.netmap text { fill: var(--c-text); font-size: 16px; font-family: var(--font); }
 .netmap .n-person { fill: var(--c-primary); }
 .netmap .n-project { fill: var(--c-accent); }
 .netmap line { stroke: var(--c-muted); stroke-width: 2; }
@@ -239,8 +242,8 @@ input[type="time"], input[type="number"], select { min-width: 0; }
 .item { flex-wrap: wrap; }
 .item .i-main { flex: 1 1 150px; }
 .status-chips { display: flex; flex-wrap: wrap; gap: var(--gap-xs); margin: var(--gap-s) 0; }
-.stchip { text-decoration: none; min-height: 32px; }
-.toast-report { color: inherit; font-weight: 700; white-space: nowrap; }
+.stchip { text-decoration: none; min-height: var(--touch); }
+.toast-report { color: inherit; font-weight: 700; white-space: nowrap; display: inline-flex; align-items: center; min-height: var(--touch); }
 .newdata { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--gap) * 5); z-index: 55; display: flex; gap: var(--gap-s); align-items: center;
   background: var(--c-surface); color: var(--c-text); padding: var(--gap-s) var(--gap); border-radius: var(--radius-pill); box-shadow: var(--shadow-3d); max-width: calc(100vw - 32px); flex-wrap: wrap; }
 .iconchip { display: inline-flex; align-items: center; gap: 6px; }
@@ -272,7 +275,8 @@ h1 { font-size: var(--fs-title); }
 .hero-search { display: flex; gap: var(--gap-s); align-items: stretch; background: var(--c-surface); border-radius: calc(var(--radius) + 8px);
   padding: 8px; box-shadow: var(--shadow-3d); border: 3px solid var(--c-primary); }
 .hero-search input { flex: 1 1 auto; min-width: 0; min-height: var(--search-h); font-size: 1.25rem; border: 0; background: transparent; padding: 0 var(--gap); }
-.hero-search input:focus { box-shadow: none; }
+.hero-search input:focus { box-shadow: none; outline: none; }
+.hero-search:focus-within { outline: var(--focus-w) solid var(--c-focus); outline-offset: 3px; }
 .hero-search .btn { min-height: var(--search-h); flex: none; }
 .quick { background: var(--c-surface); border-radius: var(--radius); box-shadow: var(--shadow-soft); padding: var(--gap); }
 .quick:empty { display: none; }
@@ -346,3 +350,6 @@ h1 { font-size: var(--fs-title); }
   border-radius: var(--radius); padding: var(--gap-s) var(--gap); text-align: center; }
 .steps { padding-left: 1.4em; display: grid; gap: var(--gap-s); }
 main:focus, main:focus-visible { outline: none; }
+
+/* 1.1.2 잘 보이게: 누르는 동안 안쪽 테두리(색은 그대로라 글자 대비 유지) */
+.chip:active, a.item:active, button.item:active, .tile:active, .ktile:active { box-shadow: var(--shadow-3d-press), inset 0 0 0 var(--press-ring) currentColor; }

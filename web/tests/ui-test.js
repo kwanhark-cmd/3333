@@ -1,7 +1,8 @@
 /* 보기 화면 자동 테스트(Playwright).
  * 실행: node web/tests/ui-test.js   (엔진을 임시 폴더로 직접 띄움)
  * 1) 흐름: 폴더 선택 → 색인 → 이름 검색 → 내용 검색 → 음성 검색 → 날짜별 보기 → 중복 찾기(휴지통 확인 창까지)
- * 2) 디자인: 360×640·가장 큰 글씨·어두운·고대비 모드에서 잘림·겹침 없음, 글자 대비(WCAG AA), 움직임 줄이기
+ * 2) 디자인: 360×640·가장 큰 글씨·어두운·고대비 모드에서 잘림·겹침 없음, 글자 대비 7:1(1.1.2부터), 움직임 줄이기
+ * 3) 잘 보이게(1.1.2): 화면 색 3가지 × 색 테마 5가지에서 버튼 높이·글자 크기·굵기·테두리·대비, 누름·키보드 초점 상태를 계산된 모양으로 잰다
  */
 const { chromium } = require("playwright");
 const { spawn, spawnSync } = require("child_process");
@@ -52,7 +53,7 @@ const layoutCheck = () => {
   const problems = [];
   const vw = document.documentElement.clientWidth;
   if (document.documentElement.scrollWidth > vw + 1) problems.push(`가로 넘침 ${document.documentElement.scrollWidth}>${vw}`);
-  const els = document.querySelectorAll("button, a.btn, a.tile, .tile, .chip, h1, h2, .t-name, .t-desc, .i-name, .badge, label, p, input, select");
+  const els = document.querySelectorAll("button, a.btn, a.tile, .tile, .chip, .stchip, .toast-report, h1, h2, .t-name, .t-desc, .i-name, .badge, label, p, input, select, summary");
   for (const el of els) {
     const st = getComputedStyle(el);
     if (st.display === "none" || st.visibility === "hidden" || el.closest("[hidden], .sr-only, details:not([open]) > :not(summary)")) continue;
@@ -60,7 +61,8 @@ const layoutCheck = () => {
     if (!r.width || !r.height) continue;
     if (r.right > vw + 1 || r.left < -1) problems.push(`화면 밖: ${el.tagName}.${el.className} "${(el.textContent || "").trim().slice(0, 20)}"`);
     if (el.scrollWidth > el.clientWidth + 2 && st.overflowX !== "auto" && el.tagName !== "INPUT") problems.push(`글자 잘림: ${el.tagName}.${el.className} "${(el.textContent || "").trim().slice(0, 20)}"`);
-    if (el.matches("button, a.btn, .chip") && r.height < 47.5) problems.push(`터치 영역 작음(${Math.round(r.height)}px): "${el.textContent.trim().slice(0, 15)}"`);
+    if (el.matches("button, a.btn, .chip, .stchip, .toast-report") && r.height < 47.5) problems.push(`터치 영역 작음(${Math.round(r.height)}px): "${el.textContent.trim().slice(0, 15)}"`);
+    if (el.matches(".btn") && r.height < 51.5) problems.push(`버튼 높이 52px 미만(${Math.round(r.height)}px): "${el.textContent.trim().slice(0, 15)}"`);
     if (el.matches(".btn:not(.btn-small):not(.navbtn)") && r.height < 55.5) problems.push(`버튼 높이 56px 미만(${Math.round(r.height)}px): "${el.textContent.trim().slice(0, 15)}"`);
   }
   // 타일끼리 겹침
@@ -72,7 +74,7 @@ const layoutCheck = () => {
   return problems;
 };
 
-const contrastCheck = () => {
+const contrastCheck = (min = 4.5) => {
   const parse = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
   const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
   const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const c = parse(getComputedStyle(e).backgroundColor); if (c && c.a > 0.5 && getComputedStyle(e).backgroundImage === "none") return c; } return parse(getComputedStyle(document.body).backgroundColor); };
@@ -88,9 +90,68 @@ const contrastCheck = () => {
     if (!fg || !bg) continue;
     const L1 = lum(fg), L2 = lum(bg);
     const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
-    if (ratio < 4.5) { const k = el.className + st.color + ratio.toFixed(1); if (!seen.has(k)) { seen.add(k); bad.push(`${ratio.toFixed(2)}:1 "${el.textContent.trim().slice(0, 15)}" (${el.tagName}.${el.className})`); } }
+    if (ratio < min) { const k = el.className + st.color + ratio.toFixed(1); if (!seen.has(k)) { seen.add(k); bad.push(`${ratio.toFixed(2)}:1 "${el.textContent.trim().slice(0, 15)}" (${el.tagName}.${el.className})`); } }
   }
   return bad;
+};
+
+// ---- 1.1.2 잘 보이게: 계산된 모양(높이·글자·테두리·대비)을 직접 잰다 ----
+const visCheck = () => {
+  const parse = (c) => { const m = c && c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+  const lum = ({ r, g, b }) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const ratio = (a, b) => { const L1 = lum(a), L2 = lum(b); return (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05); };
+  const bgOf = (el) => { for (let e = el; e; e = e.parentElement) { const st = getComputedStyle(e); const c = parse(st.backgroundColor); if (c && c.a > 0.5 && st.backgroundImage === "none") return c; } return parse(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255 }; };
+  const isRed = (c) => c.r > 120 && c.r > c.g * 1.4 && c.r > c.b * 1.4;
+  const shown = (el) => { const st = getComputedStyle(el); const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && st.visibility !== "hidden" && !el.closest("[hidden], .sr-only, .theater, details:not([open]) > :not(summary)"); };
+  const name = (el) => `"${(el.textContent || el.getAttribute("aria-label") || "").trim().slice(0, 14)}"(${el.className})`;
+  const bad = [];
+  const m = { buttons: 0, filled: 0, lined: 0, danger: 0, dangerLine: 0, texts: 0, minBtnH: 999, minBtnFs: 999, minTextFs: 999, minFilledCr: 99, minTextCr: 99, minLine: 99 };
+  for (const el of document.querySelectorAll(".btn")) {
+    if (!shown(el) || el.disabled) continue;
+    const st = getComputedStyle(el), r = el.getBoundingClientRect();
+    m.buttons++;
+    const fs = parseFloat(st.fontSize), fw = parseInt(st.fontWeight, 10);
+    m.minBtnH = Math.min(m.minBtnH, r.height); m.minBtnFs = Math.min(m.minBtnFs, fs);
+    if (r.height < 51.5) bad.push(`버튼 높이 ${r.height.toFixed(0)}px < 52: ${name(el)}`);
+    if (r.width < 47.5) bad.push(`버튼 폭 ${r.width.toFixed(0)}px < 48: ${name(el)}`);
+    if (fs < 16.95) bad.push(`버튼 글자 ${fs}px < 17: ${name(el)}`);
+    if (fw < 700) bad.push(`버튼 글자 굵기 ${fw} < 700: ${name(el)}`);
+    const fg = parse(st.color), bg = parse(st.backgroundColor);
+    const lined = el.matches(".btn-ghost, .btn-danger-line");
+    if (lined) {
+      m.lined++;
+      for (const side of ["Top", "Right", "Bottom", "Left"]) {
+        const w = parseFloat(st[`border${side}Width`]);
+        m.minLine = Math.min(m.minLine, w);
+        if (w < 1.95 || st[`border${side}Style`] !== "solid") bad.push(`테두리 ${side} ${w}px < 2: ${name(el)}`);
+      }
+      const bc = parse(st.borderTopColor), around = bgOf(el.parentElement), own = bgOf(el);
+      const cr = Math.min(ratio(bc, around), ratio(bc, own));
+      if (cr < 3) bad.push(`테두리가 흐림 ${cr.toFixed(2)}:1: ${name(el)}`);
+    } else if (bg && bg.a > 0.5) m.filled++;
+    const base = bg && bg.a > 0.5 ? bg : bgOf(el);
+    const cr = ratio(fg, base);
+    if (!lined) m.minFilledCr = Math.min(m.minFilledCr, cr);
+    if (cr < 7) bad.push(`버튼 글자 대비 ${cr.toFixed(2)}:1 < 7: ${name(el)}`);
+    if (el.matches(".btn-danger")) { m.danger++; if (!isRed(bg)) bad.push(`위험 버튼이 빨강이 아님 ${st.backgroundColor}: ${name(el)}`); }
+    if (el.matches(".btn-danger-line")) { m.danger++; m.dangerLine++; if (!isRed(fg) || !isRed(parse(st.borderTopColor))) bad.push(`빼기·지우기 버튼이 빨강이 아님 ${st.color}: ${name(el)}`); }
+  }
+  // 본문 글자: 16px 이상, 바탕 대비 7:1 이상(옅은 회색 금지)
+  for (const el of document.querySelectorAll("body *")) {
+    if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+    if (!shown(el) || el.closest(".viewer, .memory, .netmap, button:disabled, option, select") || el.matches("option, script, style")) continue;
+    const st = getComputedStyle(el);
+    if (parseFloat(st.opacity) < 1) continue;
+    m.texts++;
+    const fs = parseFloat(st.fontSize);
+    m.minTextFs = Math.min(m.minTextFs, fs);
+    if (fs < 15.95) bad.push(`글자 ${fs}px < 16: ${name(el)}`);
+    const cr = ratio(parse(st.color), bgOf(el));
+    m.minTextCr = Math.min(m.minTextCr, cr);
+    if (cr < 7) bad.push(`글자 대비 ${cr.toFixed(2)}:1 < 7: ${name(el)}`);
+  }
+  if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1) bad.push(`가로 넘침 ${document.documentElement.scrollWidth}px`);
+  return { bad, m };
 };
 
 (async () => {
@@ -546,12 +607,74 @@ const contrastCheck = () => {
           await p.goto(BASE + r);
           await p.waitForTimeout(700);
           for (const x of await p.evaluate(layoutCheck)) problems.push(`${r} ${x}`);
-          for (const x of await p.evaluate(contrastCheck)) problems.push(`${r} 대비 ${x}`);
+          for (const x of await p.evaluate(contrastCheck, 7)) problems.push(`${r} 대비 ${x}`); // 1.1.2: 모든 글자 7:1 이상
         }
         await p.close();
         assert(!problems.length, "\n   " + [...new Set(problems)].slice(0, 25).join("\n   "));
       });
     }
+    // ---- 1.1.2 잘 보이게: 모든 화면 색(밝게·어둡게·고대비) × 색 테마 5가지, 360px 폭 ----
+    const visRoutes = ["#/", "#/search?q=" + encodeURIComponent("계약금 들어간 문서"), "#/settings", "#/index", "#/dupes", "#/people", "#/records", "#/photos?year=2005", "#/wizard?step=2", "#/scenes?q=" + encodeURIComponent("바닷가")];
+    const visLooks = [];
+    for (const theme of ["light", "dark"]) for (const palette of ["blue", "green", "purple", "orange", "pink"]) visLooks.push({ theme, palette });
+    visLooks.push({ theme: "contrast", palette: "blue" });
+    const visSummary = [];
+    for (const look of visLooks) {
+      await step(`잘 보이게: ${look.theme}·${look.palette} — 버튼 52px·글자 17px 굵게·테두리 2px·대비 7:1·본문 16px`, async () => {
+        await api("/api/settings", { theme: look.theme, palette: look.palette, font_scale: 0, reduce_motion: true });
+        const p = await browser.newPage({ viewport: { width: 360, height: 640 } });
+        const problems = [];
+        const agg = { buttons: 0, filled: 0, lined: 0, danger: 0, dangerLine: 0, texts: 0, minBtnH: 999, minBtnFs: 999, minTextFs: 999, minFilledCr: 99, minTextCr: 99, minLine: 99 };
+        for (const r of visRoutes) {
+          await p.goto(BASE + r);
+          await p.waitForTimeout(600);
+          const { bad, m } = await p.evaluate(visCheck);
+          for (const x of bad) problems.push(`${r} ${x}`);
+          for (const k of Object.keys(agg)) agg[k] = k.startsWith("min") ? Math.min(agg[k], m[k]) : agg[k] + m[k];
+        }
+        assert(agg.buttons > 30 && agg.filled > 10 && agg.lined > 5 && agg.danger >= 2 && agg.dangerLine >= 1 && agg.texts > 100, "잰 것이 너무 적음 " + JSON.stringify(agg));
+        // 누르는 동안(:active): 색은 그대로(대비 7:1 유지) + 눈에 보이는 안쪽 테두리
+        await p.goto(BASE + "#/");
+        const btn = p.locator(".hero-search .btn-primary, .hero-search .btn").first();
+        await btn.waitFor();
+        const box = await btn.boundingBox();
+        const readBtn = () => btn.evaluate((el) => { const st = getComputedStyle(el); return { bg: st.backgroundColor, fg: st.color, sh: st.boxShadow, tf: st.transform, active: el.matches(":active") }; });
+        await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        const idle = await readBtn();
+        await p.mouse.down();
+        const pressed = await readBtn();
+        await p.mouse.up();
+        const crOf = (s) => p.evaluate(([a, b]) => { const P = (c) => c.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number); const L = (rgb) => { const [r, g, b2] = rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b2; }; const x = L(P(a)), y = L(P(b)); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }, [s.bg, s.fg]);
+        assert(pressed.active, "누르는 상태가 잡히지 않음");
+        assert(pressed.sh !== idle.sh && /inset/.test(pressed.sh), "누를 때 모양 변화 없음: " + pressed.sh);
+        const crPressed = await crOf(pressed);
+        if (crPressed < 7) problems.push(`누르는 동안 버튼 대비 ${crPressed.toFixed(2)}:1 < 7`);
+        // 키보드 초점(:focus-visible): 3px 이상 테두리, 바탕과 대비 3:1 이상
+        await p.goto(BASE + "#/settings");
+        await p.waitForSelector("#g-danger");
+        let focus = null;
+        for (let i = 0; i < 12 && !focus; i++) {
+          await p.keyboard.press("Tab");
+          focus = await p.evaluate(() => { const el = document.activeElement; if (!el || !el.matches(".btn")) return null; const st = getComputedStyle(el); return { w: parseFloat(st.outlineWidth), style: st.outlineStyle, color: st.outlineColor, bg: getComputedStyle(document.body).backgroundColor, fv: el.matches(":focus-visible") }; });
+        }
+        assert(focus && focus.fv, "키보드로 버튼에 초점이 가지 않음");
+        assert(focus.w >= 3 && focus.style !== "none", "초점 테두리 " + JSON.stringify(focus));
+        const crFocus = await crOf({ bg: focus.bg, fg: focus.color });
+        if (crFocus < 3) problems.push(`초점 테두리 대비 ${crFocus.toFixed(2)}:1 < 3`);
+        visSummary.push(`${look.theme}/${look.palette}: 버튼 ${agg.buttons}개 최소 ${agg.minBtnH.toFixed(0)}px·${agg.minBtnFs}px, 채운 버튼 최소 대비 ${agg.minFilledCr.toFixed(2)}, 누름 ${crPressed.toFixed(2)}, 테두리 ${agg.minLine}px, 본문 ${agg.texts}개 최소 ${agg.minTextFs}px·대비 ${agg.minTextCr.toFixed(2)}, 초점 ${crFocus.toFixed(2)}`);
+        await p.close();
+        assert(!problems.length, "\n   " + [...new Set(problems)].slice(0, 25).join("\n   "));
+      });
+    }
+    await step("잘 보이게: 겹침 순서(연결 안내 45 < 확인 창 50 < 알림 60) 그대로", async () => {
+      const p = await browser.newPage();
+      await p.goto(BASE + "#/");
+      const z = await p.evaluate(() => Object.fromEntries(["offline", "modal-back", "toast-wrap"].map((c) => { const e = document.createElement("div"); e.className = c; document.body.append(e); const v = Number(getComputedStyle(e).zIndex); e.remove(); return [c, v]; })));
+      assert(z.offline < z["modal-back"] && z["modal-back"] < z["toast-wrap"], JSON.stringify(z));
+      await p.close();
+      await api("/api/settings", { theme: "light", palette: "blue" });
+      if (process.env.UI_VIS) console.log(visSummary.join("\n"));
+    });
     await step("움직임 줄이기: 켜면 애니메이션 시간 0", async () => {
       await api("/api/settings", { reduce_motion: true, font_scale: 1, theme: "light" });
       const p = await browser.newPage();
