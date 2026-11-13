@@ -35,7 +35,11 @@
   App.link = (label, href, cls = "btn-primary", icon = null) => h("a", { class: `btn ${cls}`, href }, icon ? App.icon(icon) : null, label);
 
   // ---- 서버 연결 ----
-  App.url = (path) => App.base + path;
+  App.url = (path) => {
+    // 포장 앱(다른 출처)에서는 쿠키가 가지 않으므로 사진·영상·올리기 주소에 연결 표를 붙인다
+    const t = App.base && localStorage.getItem("hd_token");
+    return App.base + path + (t ? (path.includes("?") ? "&" : "?") + "hd_token=" + encodeURIComponent(t) : "");
+  };
   App.api = async function (path, opts = {}) {
     const init = { method: opts.method || "GET", headers: { "x-hd-user": App.user }, credentials: "include" };
     const tok = localStorage.getItem("hd_token");
@@ -69,6 +73,13 @@
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(obj)) if (v !== undefined && v !== null && v !== "") p.set(k, v);
     return p.toString();
+  };
+  /** 버전 비교: a가 b보다 옛 버전이면 true */
+  App.olderThan = function (a, b) {
+    const v = (s) => (String(s || "0").match(/\d+/g) || ["0"]).slice(0, 3).map(Number);
+    const x = v(a), y = v(b);
+    for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0);
+    return false;
   };
   App.thumb = (id, t) => App.url(`/api/files/${id}/thumb` + (t ? `?t=${t}` : ""));
   App.raw = (id) => App.url(`/api/files/${id}/raw`);
@@ -296,7 +307,7 @@
           h("li", { text: "PC 설정에서 '다른 기기에서 보기'가 켜져 있는지 확인해 주세요." })),
         App.base ? h("p", { class: "muted", text: "찾는 주소: " + App.base }) : null,
         App.btn("다시 찾기", async () => {
-          try { await fetch(App.url("/api/health")); box.remove(); App.render(); } catch (e) { App.toast("아직 연결되지 않았어요.", "warn"); }
+          try { await fetch(App.url("/api/health")); location.reload(); } catch (e) { App.toast("아직 연결되지 않았어요.", "warn"); }
         }, "btn-accent btn-block", "magnifying-glass-tilted-left"),
         App.btn("같은 와이파이에서 자동으로 찾기", async (e) => {
           e.target.disabled = true; e.target.textContent = "찾는 중… (최대 20초)";
@@ -331,11 +342,12 @@
   App.showPair = async function () {
     if (document.querySelector(".modal-back")) return;
     const code = await App.prompt("연결 번호 입력", "PC 화면 설정 > 다른 기기에서 보기 에 나온 6자리 번호", "", "number");
-    if (!code) return;
+    if (!code) { if (App.isShell) App.showOffline(); return; }
     try {
       const r = await App.api("/api/pair", { body: { code } });
       localStorage.setItem("hd_token", r.token);
       App.toast("연결되었어요!", "ok");
+      if (App.isShell) { location.reload(); return; }
       App.render();
     } catch (e) { App.toast(e.message, "danger"); }
   };
@@ -354,7 +366,7 @@
     if (App.isShell && !App.base) { App.showOffline(); return; }
     try {
       App.applySettings(await App.api("/api/settings"));
-    } catch (e) { if (App.isShell) App.showOffline(); return; }
+    } catch (e) { if (App.isShell && !document.querySelector(".modal-back")) App.showOffline(); return; }
     await App.voice.checkMic();
     // 상태 확인은 어떤 화면으로 시작하든(첫 실행 마법사 포함) 항상 돌린다
     App.pollStatus();
@@ -367,7 +379,11 @@
     // 보기 앱(휴대폰·맥)과 PC 엔진 버전이 다르면 안내
     try {
       const hl = await App.api("/api/health");
-      if (hl.version && hl.version !== App.version) App.toast(`보기 화면(${App.version})과 PC 엔진(${hl.version}) 버전이 달라요. 설정 > 업데이트 확인을 눌러 주세요.`, "warn", 10000);
+      if (hl.version && hl.version !== App.version) {
+        App.toast(App.olderThan(App.version, hl.version)
+          ? `이 보기 앱(${App.version})이 PC 프로그램(${hl.version})보다 옛 버전이에요. 설정 > 업데이트 확인에서 새 앱으로 바꾸는 순서를 보세요.`
+          : `PC 프로그램(${hl.version})이 이 보기 앱(${App.version})보다 옛 버전이에요. PC에서 설정 > 업데이트 확인을 눌러 주세요.`, "warn", 10000);
+      }
     } catch (e) { /* 무시 */ }
   };
 

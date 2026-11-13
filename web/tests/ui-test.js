@@ -389,6 +389,126 @@ const contrastCheck = () => {
       assert.strictEqual(ids[ids.length - 1], "g-danger");
       assert(await page.locator("main .page > .row a:has-text('문제 신고')").count() === 1);
     });
+    // ---- 업데이트 카드: 안드로이드는 '백업 → 받기 → 옛 앱 지우기 → 설치 → 다시 연결' ----
+    const ANDROID_UA = "Mozilla/5.0 (Linux; Android 14; SM-S911N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36";
+    const mockUpdate = (resp) => async (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ notes: "- 바뀐 점", page: "https://example.invalid/rel", engine_busy: false, can_auto_install: false,
+      assets: { android: { name: "HDBiseo-x-android.apk", url: "https://example.invalid/a.apk" }, windows: { name: "HDBiseo-Setup-x.exe", url: "https://example.invalid/s.exe" }, mac: { name: "x.dmg", url: "https://example.invalid/m.dmg" } }, ...resp }) });
+    const engineVer = (await api("/api/health")).version;
+    await step("업데이트(안드로이드 앱이 옛 버전): 백업 먼저, 옛 앱 지우고 설치, 덮어쓰기 약속 없음", async () => {
+      const c = await browser.newContext({ userAgent: ANDROID_UA, viewport: { width: 360, height: 640 } });
+      await c.addInitScript(() => { window.Capacitor = { isNativePlatform: () => true }; localStorage.setItem("hd_base", location.origin); });
+      const p = await c.newPage();
+      p.on("pageerror", (e) => errors.push(e.message));
+      // PC 엔진은 최신인데 휴대폰 앱만 옛 버전인 경우(1.1.0에서는 '최신 버전이에요'로 잘못 나왔음)
+      await p.route("**/api/update/check", mockUpdate({ current: engineVer, latest: engineVer, newer: false }));
+      await p.goto(BASE + "#/settings");
+      await p.waitForSelector("#g-danger");
+      await p.evaluate(() => { App.version = "1.0.0"; App.render(); });
+      await p.waitForSelector("#g-danger");
+      await p.click("#update-card button:has-text('업데이트 확인')");
+      await p.waitForSelector("#android-steps");
+      const card = await p.locator("#update-card").innerText();
+      assert(!card.includes("최신 버전이에요"), "옛 앱인데 최신이라고 함");
+      assert(!/덮어|설치 화면이 열려요/.test(card), "덮어쓰기 약속: " + card);
+      const steps = await p.$$eval("#android-steps li", (ls) => ls.map((l) => l.textContent));
+      assert(steps.length === 5, "순서 " + steps.length + "개");
+      assert(/백업/.test(steps[0]) && /지워요/.test(steps[2]) && /설치/.test(steps[3]) && /연결 번호/.test(steps[4]), JSON.stringify(steps));
+      assert.strictEqual(await p.getAttribute("#apk-link", "href"), "https://example.invalid/a.apk");
+      const lay = await p.evaluate(layoutCheck);
+      assert(!lay.length, lay.join("; "));
+      // 백업하지 않고 받으려 하면 먼저 백업하라고 묻는다 → 백업은 PC에 저장
+      const before = (await api("/api/backups")).length;
+      await p.click("#apk-link");
+      await p.waitForSelector(".modal >> text=아직 백업하지 않았어요");
+      await p.click(".modal button:has-text('백업하기')");
+      await p.waitForSelector("#android-steps .badge.st-ok:not([hidden])");
+      assert.strictEqual((await api("/api/backups")).length, before + 1, "백업 파일이 PC에 생기지 않음");
+      await c.close();
+    });
+    await step("업데이트(윈도우 PC): '지금 설치'는 그대로, 안드로이드 순서 없음 / 둘 다 최신이면 '최신'", async () => {
+      const p = await browser.newPage();
+      await p.route("**/api/update/check", mockUpdate({ current: engineVer, latest: "9.9.9", newer: true, can_auto_install: true }));
+      await p.goto(BASE + "#/settings");
+      await p.waitForSelector("#g-danger");
+      await p.click("#update-card button:has-text('업데이트 확인')");
+      await p.waitForSelector("#update-card button:has-text('지금 설치')");
+      assert.strictEqual(await p.locator("#android-steps").count(), 0);
+      await p.unroute("**/api/update/check");
+      await p.route("**/api/update/check", mockUpdate({ current: engineVer, latest: engineVer, newer: false }));
+      await p.click("#update-card button:has-text('업데이트 확인')");
+      await p.waitForSelector("#update-card >> text=최신 버전이에요");
+      await p.close();
+    });
+
+    // ---- 안드로이드 포장 앱 흐름: 다른 출처(http://localhost) + 다른 기기 주소로 PC 엔진에 접속 ----
+    await step("안드로이드 앱 흐름: 연결 번호 → 사진 → 백업 → 앱 지우고 새로 설치 → 다시 연결 → 복원", async () => {
+      const ip = Object.values(os.networkInterfaces()).flat().find((a) => a && a.family === "IPv4" && !a.internal);
+      assert(ip, "시험할 네트워크 주소가 없음");
+      const PORT2 = PORT + 1000, PORT3 = PORT + 1500;
+      const HOME2 = fs.mkdtempSync(path.join(os.tmpdir(), "hdui-lan-"));
+      const env2 = { ...env, HDBISEO_HOME: HOME2, HDBISEO_PORT: String(PORT2) };
+      spawnSync(PY, ["-c", "from hdbiseo import settings as st; st.save_app_config({'lan_enabled': True, 'pair_code': '123456'})"], { cwd: path.join(ROOT, "engine"), env: env2 });
+      const eng2 = spawn(PY, ["-m", "hdbiseo", "--no-browser"], { cwd: path.join(ROOT, "engine"), env: env2, stdio: "ignore" });
+      const stat = spawn(PY, ["-m", "http.server", String(PORT3), "--bind", "127.0.0.1", "--directory", path.join(ROOT, "web")], { stdio: "ignore" });
+      const LOCAL2 = `http://127.0.0.1:${PORT2}`, PC = `http://${ip.address}:${PORT2}`, APP = `http://localhost:${PORT3}/`;
+      const post2 = async (p2, b) => (await fetch(LOCAL2 + p2, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b || {}) })).json();
+      const c = await browser.newContext({ userAgent: ANDROID_UA, viewport: { width: 360, height: 740 } });
+      try {
+        for (let i = 0; i < 100; i++) { try { if ((await fetch(LOCAL2 + "/api/health")).ok) break; } catch (e) { /* 기다림 */ } await new Promise((r) => setTimeout(r, 200)); }
+        for (let i = 0; i < 50; i++) { try { if ((await fetch(APP)).ok) break; } catch (e) { /* 기다림 */ } await new Promise((r) => setTimeout(r, 200)); }
+        const sm = await post2("/api/samples"); await post2("/api/roots", { path: sm.path, label: "체험용 예제" }); await post2("/api/index/start");
+        for (let i = 0; i < 240; i++) { const s = await (await fetch(LOCAL2 + "/api/index/status")).json(); if (!s.running && s.state.phase === "done") break; await new Promise((r) => setTimeout(r, 500)); }
+        await c.addInitScript(() => { window.Capacitor = { isNativePlatform: () => true }; });
+        const p = await c.newPage();
+        p.on("pageerror", (e) => errors.push(e.message));
+        const pair = async () => {
+          await p.waitForSelector(".modal >> text=연결 번호 입력", { timeout: 15000 });
+          assert.strictEqual(await p.locator(".offline").count(), 0, "연결 번호 창이 'PC를 찾을 수 없어요'에 가려짐");
+          await p.fill(".modal input", "123456");
+          const reloaded = p.waitForEvent("load"); // 연결되면 앱이 처음부터 다시 켜진다
+          await p.click(".modal button:has-text('확인')");
+          await reloaded;
+          assert(await p.evaluate(() => !!localStorage.getItem("hd_token")), "연결 표가 저장되지 않음");
+          await p.waitForSelector("#view .page");
+        };
+        const photosDrawn = async () => {
+          await p.evaluate(() => { location.hash = "#/photos"; });
+          await p.waitForSelector("a.tile", { timeout: 15000 });
+          for (let i = 0; i < 3 && !(await p.locator(".thumb-card img").count()); i++) { await p.locator("a.tile").first().click(); await p.waitForTimeout(1200); }
+          await p.waitForFunction(() => [...document.querySelectorAll(".thumb-card img")].some((im) => im.complete && im.naturalWidth > 0), null, { timeout: 15000 });
+        };
+        // 1) 처음 설치: PC 주소를 찾은 뒤 연결 번호 입력 → 사진(썸네일은 연결 표가 붙은 주소로 그려짐)
+        await p.goto(APP);
+        await p.waitForSelector(".offline >> text=PC 엔진을 찾을 수 없어요");
+        await p.evaluate((pc) => localStorage.setItem("hd_base", pc), PC);
+        await p.reload();
+        await pair();
+        await photosDrawn();
+        // 2) 업데이트 전 백업(PC에 저장)
+        const bk = await p.evaluate(async () => (await App.api("/api/backup", { body: {} })).file);
+        assert(fs.readdirSync(HOME2, { recursive: true }).some((f) => String(f).endsWith(bk)), "백업 파일이 PC에 없음");
+        // 3) 앱 삭제 + 새로 설치 = 휴대폰에 있던 PC 주소·연결 표가 모두 사라짐
+        await p.evaluate(() => localStorage.clear());
+        await c.clearCookies();
+        await p.goto(APP);
+        await p.waitForSelector(".offline >> text=PC 엔진을 찾을 수 없어요");
+        await p.click(".offline button:has-text('PC 주소 직접 입력')");
+        await p.fill(".modal input", PC.replace("http://", ""));
+        const typed = p.waitForEvent("load");
+        await p.click(".modal button:has-text('확인')");
+        await typed;
+        // 4) 연결 번호를 다시 넣으면 PC의 자료가 그대로 보인다
+        await pair();
+        await photosDrawn();
+        // 5) 설정 > 자료 관리 > 백업·복원에서 방금 백업으로 복원
+        await p.evaluate(() => { location.hash = "#/settings"; });
+        await p.waitForSelector("#g-data select");
+        await p.selectOption("#g-data select", bk);
+        await p.click("#g-data button:has-text('이 백업으로 복원')");
+        await p.click(".modal button:has-text('복원하기')");
+        await p.waitForSelector("text=백업에서 되살렸어요");
+      } finally { await c.close(); eng2.kill(); stat.kill(); }
+    });
     await step("마이크 장치가 없는 기기: 음성 인식이 있어도 글자 입력칸만", async () => {
       const p3 = await browser.newPage();
       await p3.addInitScript(() => { window.webkitSpeechRecognition = function () {}; if (navigator.mediaDevices) navigator.mediaDevices.enumerateDevices = async () => []; });

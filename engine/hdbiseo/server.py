@@ -47,14 +47,7 @@ class UserError(Exception):
 app = FastAPI(title=APP_NAME, version=VERSION, docs_url=None, redoc_url=None)
 _dupe_finders: dict[str, dupes.DupeFinder] = {}
 
-# 데스크톱(Electron)·안드로이드(Capacitor) 포장 앱에서 접속 허용
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"^(capacitor://localhost|https?://localhost(:\d+)?|app://.*|file://.*)$",
-    allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
-)
 
 
 def _is_local(request: Request) -> bool:
@@ -68,7 +61,7 @@ async def guard(request: Request, call_next):
     path = request.url.path
     if path.startswith("/api/") and not _is_local(request) and path not in ("/api/health", "/api/pair"):
         cfg = st.app_config()
-        token = request.cookies.get("hd_token") or request.headers.get("x-hd-token")
+        token = request.cookies.get("hd_token") or request.headers.get("x-hd-token") or request.query_params.get("hd_token")
         if not cfg.get("lan_enabled"):
             return JSONResponse({"error": "이 PC에서 '다른 기기에서 보기'가 꺼져 있어요."}, status_code=403)
         if not token or token not in cfg.get("tokens", []):
@@ -79,6 +72,15 @@ async def guard(request: Request, call_next):
         log.exception("요청 처리 중 오류: %s", path)
         return JSONResponse({"error": "잠깐 문제가 생겼어요. 다시 해 보세요. 계속되면 설정 > 문제 신고를 눌러 주세요."},
                             status_code=500)
+
+
+# 데스크톱(Electron)·안드로이드(Capacitor) 포장 앱에서 접속 허용.
+# 지킴이(guard)보다 뒤에 등록해야 가장 바깥에서 돌아, 사전 확인(OPTIONS)과 401 응답에도 허용 머리말이 붙는다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^(capacitor://localhost|https?://localhost(:\d+)?|app://.*|file://.*)$",
+    allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+)
 
 
 @app.exception_handler(UserError)

@@ -11,30 +11,81 @@
   const group = (id, icon, title, ...kids) => h("section", { class: "card stack set-group", id }, h("h2", {}, App.icon(icon), " " + title), ...kids);
   const ext = (href, label) => h("a", { href, target: "_blank", rel: "noopener", text: label });
 
+  /** 안드로이드 앱 바꾸는 순서. 서명 열쇠가 없어 새 앱은 옛 앱 위에 설치되지 않으므로 '백업 → 받기 → 지우기 → 설치 → 다시 연결' */
+  App.androidSteps = function (r) {
+    const asset = r.assets && r.assets.android;
+    const href = (asset && asset.url) || r.page || "https://github.com/kwanhark-cmd/3333/releases/latest";
+    let backedUp = false;
+    const done = h("p", { class: "badge st-ok", hidden: true, text: "✔ 백업했어요. 이제 ② 새 앱 파일을 받으세요." });
+    const doBackup = async () => {
+      const x = await App.api("/api/backup", { body: {} });
+      backedUp = true;
+      done.hidden = false;
+      App.toast(x.message + " (PC에 저장)", "ok");
+    };
+    return h("div", { class: "stack", id: "android-steps" },
+      h("h3", { text: "휴대폰 앱 새 버전으로 바꾸는 순서" }),
+      h("ol", { class: "steps" },
+        h("li", {}, h("strong", { text: "먼저 백업: " }), "아래 '① 지금 백업'을 눌러요. 백업 파일은 휴대폰 앱이 아니라 PC에 저장돼요."),
+        h("li", { text: "'② 새 앱 파일 받기'를 눌러 인터넷 창에서 새 설치 파일(.apk)을 받아요." }),
+        h("li", { text: "휴대폰에 깔린 '하드 비서' 앱을 지워요. 새 파일은 예전 앱 위에 바로 설치되지 않아요. 휴대폰 앱에는 PC 주소와 연결 표만 있어서, 지워도 PC의 색인·설정·얼굴 이름·메모는 그대로예요." }),
+        h("li", { text: "받은 파일을 눌러 설치해요. '출처를 알 수 없는 앱'을 물으면 허용해 주세요." }),
+        h("li", { text: "새 앱을 열어 PC를 다시 찾고, PC 화면 설정 > 다른 기기에서 보기 의 6자리 연결 번호를 다시 넣어요. 자료가 이상하면 설정 > 자료 관리 > 백업·복원에서 방금 백업으로 복원해요." })),
+      h("div", { class: "row" },
+        App.btn("① 지금 백업", async (e) => {
+          const b = e.currentTarget;
+          b.disabled = true;
+          try { await doBackup(); } catch (err) { App.toast(err.message, "warn"); }
+          finally { b.disabled = false; }
+        }, "btn-primary", "inbox-tray"),
+        h("a", { class: "btn btn-accent", id: "apk-link", href, target: "_blank", rel: "noopener", onclick: async (e) => {
+          if (backedUp) return; // 백업했으면 인터넷 창으로 연다
+          e.preventDefault();
+          if (!(await App.confirm("먼저 백업", "아직 백업하지 않았어요. 지금 백업할까요? 백업 파일은 PC에 저장돼요.", "백업하기"))) return;
+          try { await doBackup(); } catch (err) { App.toast(err.message, "warn"); }
+        } }, App.icon("inbox-tray"), "② 새 앱 파일 받기")),
+      done);
+  };
+
   /** 업데이트 확인 카드(설정 맨 위) */
   App.updateCard = function (sys) {
     const out = h("div", { class: "stack" });
     const plat = /Android/i.test(navigator.userAgent) ? "android" : /Mac/i.test(navigator.platform) ? "mac" : "windows";
+    const pcVer = sys && sys.version;
+    const intro = App.isShell
+      ? `보기 앱 ${App.version}${pcVer ? ` · PC 프로그램 ${pcVer}` : ""}. 이 앱에는 PC 주소와 연결 표만 있어요. 색인·설정·얼굴 이름·메모는 모두 PC에 저장돼요.`
+      : `지금 버전 ${App.version}${pcVer && pcVer !== App.version ? ` (PC 엔진 ${pcVer})` : ""}. 새 버전을 설치해도 색인·설정·얼굴 이름·메모는 그대로예요.`;
     return h("section", { class: "card stack", id: "update-card" }, h("h2", {}, App.icon("sparkles"), " 업데이트"),
-      h("p", { text: `지금 버전 ${App.version}${sys && sys.version !== App.version ? ` (PC 엔진 ${sys.version})` : ""}. 새 버전을 설치해도 색인·설정·얼굴 이름·메모는 그대로예요.` }),
+      h("p", { text: intro }),
       h("div", { class: "row" }, App.btn("업데이트 확인", async (e) => {
         const btn = e.currentTarget;
         btn.disabled = true;
         try {
           const r = await App.api("/api/update/check");
           out.replaceChildren();
-          if (!r.newer) { out.append(h("p", { class: "badge st-ok", text: `✔ 최신 버전이에요 (${r.current})` })); return; }
-          out.append(h("p", { class: "badge st-warn", text: `새 버전 ${r.latest}이(가) 나왔어요!` }), h("div", { class: "doc-preview", text: r.notes || "" }));
-          if (r.engine_busy) out.append(h("p", { class: "badge st-progress", text: "◔ 지금 분석(색인) 중이에요. 분석이 끝난 뒤 설치해 주세요." }));
-          if (r.can_auto_install) {
-            out.append(App.btn("지금 설치(자동 백업 후)", async (ev) => {
-              if (!(await App.confirm("새 버전 설치", "설정·인물 정보를 자동으로 백업한 뒤 설치해요. 설치하는 동안 잠시 프로그램이 꺼졌다 켜져요. 색인은 그대로예요.", "설치하기"))) return;
-              ev.currentTarget.disabled = true;
-              try { const x = await App.api("/api/update/install", { body: {} }); App.toast(x.message, "ok", 15000); } catch (err) { App.toast(err.message, "warn", 8000); }
-            }, "btn-accent", "inbox-tray", { disabled: r.engine_busy }));
-          } else if (r.assets[plat]) {
+          // 휴대폰·맥 포장 앱은 화면 파일이 앱 안에 들어 있으므로, PC 엔진과 따로 보기 앱 버전도 비교한다
+          const needApp = App.isShell && App.olderThan(App.version, r.latest);
+          const needPc = !!r.newer;
+          if (!needApp && !needPc) { out.append(h("p", { class: "badge st-ok", text: `✔ 최신 버전이에요 (${r.current})` })); return; }
+          const which = App.isShell ? (needApp && needPc ? " (보기 앱·PC 프로그램)" : needApp ? " (보기 앱)" : " (PC 프로그램)") : "";
+          out.append(h("p", { class: "badge st-warn", text: `새 버전 ${r.latest}이(가) 나왔어요!${which}` }));
+          if (needApp && plat === "android") out.append(App.androidSteps(r));
+          out.append(h("div", { class: "doc-preview", text: r.notes || "" }));
+          if (needPc) {
+            if (r.engine_busy) out.append(h("p", { class: "badge st-progress", text: "◔ 지금 분석(색인) 중이에요. 분석이 끝난 뒤 설치해 주세요." }));
+            if (r.can_auto_install) {
+              out.append(App.btn("지금 설치(자동 백업 후)", async (ev) => {
+                if (!(await App.confirm("새 버전 설치", "설정·인물 정보를 자동으로 백업한 뒤 설치해요. 설치하는 동안 잠시 프로그램이 꺼졌다 켜져요. 색인은 그대로예요.", "설치하기"))) return;
+                ev.currentTarget.disabled = true;
+                try { const x = await App.api("/api/update/install", { body: {} }); App.toast(x.message, "ok", 15000); } catch (err) { App.toast(err.message, "warn", 8000); }
+              }, "btn-accent", "inbox-tray", { disabled: r.engine_busy }));
+            } else if (plat === "android" || App.isShell) {
+              out.append(h("p", { class: "muted", text: "PC 프로그램은 PC 화면에서 설정 > 업데이트 확인 > 지금 설치를 눌러 바꿔요." }));
+            }
+          }
+          if (!r.can_auto_install && plat !== "android" && (needApp || needPc) && r.assets[plat]) {
             out.append(h("a", { class: "btn btn-accent", href: r.assets[plat].url, target: "_blank", rel: "noopener" }, App.icon("inbox-tray"),
-              { android: "안드로이드 앱 내려받기(설치 화면이 열려요)", mac: "맥 앱 내려받기(새 앱으로 바꾸기)", windows: "윈도우 설치 파일 내려받기" }[plat]));
+              { mac: "맥 앱 내려받기(새 앱으로 바꾸기)", windows: "윈도우 설치 파일 내려받기" }[plat]));
           }
           if (r.page) out.append(ext(r.page, "바뀐 점 자세히 보기"));
         } catch (err) { out.replaceChildren(App.errorBox(err)); }
